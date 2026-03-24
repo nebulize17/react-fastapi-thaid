@@ -5,41 +5,67 @@ export default function Login() {
   const error = params.get('error')
 
   const handleLogin = () => {
-    window.location.href = 'http://localhost:8000/api/auth/login'
+    // Using relative path to work on both local and Ubuntu
+    window.location.href = '/api/auth/login'
   }
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-950 via-purple-950 to-black overflow-hidden">
-      {/* Decorative animated background blobs */}
-      <div className="absolute top-[-10%] left-[-10%] w-[40rem] h-[40rem] bg-purple-600 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
-      <div className="absolute top-[20%] right-[-10%] w-[40rem] h-[40rem] bg-cyan-600 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
-      <div className="absolute bottom-[-10%] left-[20%] w-[40rem] h-[40rem] bg-pink-600 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000"></div>
-      
-      <div className="relative z-10 w-full max-w-md p-10 m-4 backdrop-blur-2xl bg-white/10 rounded-3xl shadow-2xl border border-white/20 text-center">
-        <div className="mx-auto w-24 h-24 mb-6 rounded-2xl bg-gradient-to-tr from-cyan-400 to-blue-600 p-[2px] shadow-lg shadow-cyan-500/50">
-          <div className="w-full h-full bg-slate-900 rounded-2xl flex items-center justify-center">
-            <svg xmlns="http://www.开展.org/2000/svg" className="w-12 h-12 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 12 2 2 4-4"></path></svg>
+    <div className="min-h-screen bg-white">
+      {/* Top Banner / Header */}
+      <header className="border-b border-gray-100 bg-white px-6 py-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <img src="/dtam.png" alt="DTAM Logo" className="h-16 w-auto object-contain" />
+            <div className="hidden md:block">
+              <h1 className="text-xl font-bold text-slate-800 uppercase tracking-tight">ระบบบริการการแพทย์ทางไกล</h1>
+              <p className="text-sm font-semibold text-green-700">Telemedicine Service</p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-3">
+             <img src="/thaid.jpg" alt="ThaiD Logo" className="h-14 w-auto object-contain rounded-full shadow-sm" />
           </div>
         </div>
-        
-        <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400 mb-3 tracking-tight">
-          ThaID Identity
-        </h1>
-        <p className="text-gray-400 mb-8 font-medium">Sign in securely to access your dashboard</p>
-        
-        {error && (
-          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-xl text-red-300 max-w-xs mx-auto text-sm animate-pulse">
-            Authentication failed or cancelled.
+      </header>
+
+      {/* Main Content */}
+      <main className="flex flex-col items-center justify-center p-6 pt-20">
+        <div className="w-full max-w-lg">
+          <div className="bg-white p-10 rounded-2xl shadow-[0_10px_50px_rgba(0,0,0,0.08)] border border-gray-100 text-center">
+            
+            <div className="mb-10">
+              <h2 className="text-3xl font-extrabold text-slate-900 mb-2">ยินดีต้อนรับ</h2>
+              <p className="text-slate-500 font-medium">กรุณาเข้าสู่ระบบเพื่อเข้าถึงข้อมูลส่วนบุคคลของคุณ</p>
+            </div>
+
+            {error && (
+              <div className="mb-8 p-4 bg-red-50 border-l-4 border-red-500 text-red-700 text-sm text-left">
+                ระบบไม่สามารถตรวจสอบตัวตนได้ กรุณาลองใหม่อีกครั้ง
+              </div>
+            )}
+
+            <div className="space-y-6">
+              <button 
+                onClick={handleLogin}
+                className="group relative w-full flex items-center justify-center space-x-4 py-5 px-6 rounded-2xl border-2 border-slate-200 hover:border-[#1e3a8a] bg-white transition-all duration-300 shadow-sm hover:shadow-xl hover:-translate-y-1"
+              >
+                <img src="/thaid.jpg" alt="ThaiD" className="w-10 h-10 object-contain rounded-full border border-gray-100" />
+                <span className="text-xl font-bold text-[#1e3a8a]">เข้าสู่ระบบด้วย ThaID</span>
+                 <svg xmlns="http://www.w3.org/2000/svg" className="absolute right-6 w-6 h-6 text-slate-400 group-hover:text-[#1e3a8a] transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+              
+              <p className="text-xs text-slate-400 mt-6 pt-6 border-t border-gray-100 italic">
+                เฉพาะเจ้าหน้าที่และผู้ได้รับอนุญาตเท่านั้น
+              </p>
+            </div>
           </div>
-        )}
-        
-        <button 
-          onClick={handleLogin}
-          className="w-full py-4 text-lg font-bold text-white bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl shadow-[0_0_20px_rgba(59,130,246,0.5)] hover:shadow-[0_0_30px_rgba(59,130,246,0.8)] hover:from-blue-500 hover:to-purple-500 transform hover:-translate-y-1 transition-all duration-300 active:translate-y-0 active:scale-95"
-        >
-          Login with ThaID
-        </button>
-      </div>
+          
+          <div className="mt-12 text-center text-slate-400 text-sm font-medium">
+             &copy; {new Date().getFullYear()} กรมการแพทย์แผนไทยและการแพทย์ทางเลือก
+          </div>
+        </div>
+      </main>
     </div>
   )
 }

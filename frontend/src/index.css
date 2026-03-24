@@ -4,9 +4,15 @@
 
 @layer base {
   body {
-    @apply antialiased text-slate-900 bg-slate-50;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    @apply antialiased text-slate-800 bg-slate-50;
+    font-family: 'Sarabun', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
+}
+
+:root {
+  --gov-navy: #003366;
+  --gov-green: #006633;
+  --gov-white: #ffffff;
 }
 
 @layer utilities {
