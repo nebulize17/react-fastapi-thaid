@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+authlib
+httpx
+python-dotenv
+pyjwt
+itsdangerous

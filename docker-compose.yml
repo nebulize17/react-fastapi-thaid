@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: thaid-auth-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - FRONTEND_URL=http://localhost
+    networks:
+      - thaiapp
+
+  frontend:
+    build: ./frontend
+    container_name: thaid-auth-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - thaiapp
+
+networks:
+  thaiapp:
+    driver: bridge
