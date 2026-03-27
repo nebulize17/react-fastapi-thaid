@@ -1,12 +1,28 @@
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import RedirectResponse
 from authlib.integrations.starlette_client import OAuth
-from app.config import THAID_CLIENT_ID, THAID_CLIENT_SECRET, THAID_WELL_KNOWN_URL, FRONTEND_URL, JWT_SECRET_KEY
+from app.config import (
+    THAID_CLIENT_ID,
+    THAID_CLIENT_SECRET,
+    THAID_WELL_KNOWN_URL,
+    FRONTEND_URL,
+    JWT_SECRET_KEY,
+    THAID_API_KEY,
+    THAID_CALLBACK_ENDPOINT
+)
 import jwt
 from datetime import datetime, timedelta, timezone
 
 router = APIRouter()
 oauth = OAuth()
+
+# ถ้ามี API Key จะส่งไปใน header ของ request ด้วยเผื่อ DTAM Gateway หรือ BORA ต้องการ
+client_kwargs = {
+    'scope': 'openid pid address gender birthdate given_name middle_name family_name name given_name_en middle_name_en family_name_en name_en title title_en ial smartcard_code date_of_expiry date_of_issuance'
+}
+if THAID_API_KEY:
+    # เพิ่ม API Key ลงใน headers เผื่อกรณีใช้ผ่าน DTAM API Gateway
+    client_kwargs['headers'] = {'x-api-key': THAID_API_KEY}
 
 # Configure the ThaID OAuth Client
 oauth.register(
@@ -14,9 +30,7 @@ oauth.register(
     server_metadata_url=THAID_WELL_KNOWN_URL,
     client_id=THAID_CLIENT_ID,
     client_secret=THAID_CLIENT_SECRET,
-    client_kwargs={
-        'scope': 'openid pid address gender birthdate given_name middle_name family_name name given_name_en middle_name_en family_name_en name_en title title_en ial smartcard_code date_of_expiry date_of_issuance'
-    }
+    client_kwargs=client_kwargs
 )
 
 def create_jwt_token(data: dict):
@@ -33,8 +47,8 @@ async def login(request: Request):
     """
     Initiate the ThaID OAuth2 Login Flow.
     """
-    # Redirect back to the local backend /api/auth/callback
-    redirect_uri = str(request.url_for('auth_callback'))
+    # ถ้ามีการกำหนด THAID_CALLBACK_ENDPOINT จาก DTAM ให้ใช้ค่านั้นเป็น redirect_uri หลัก
+    redirect_uri = THAID_CALLBACK_ENDPOINT if THAID_CALLBACK_ENDPOINT else str(request.url_for('auth_callback'))
     return await oauth.thaid.authorize_redirect(request, redirect_uri)
 
 @router.get("/callback")
@@ -43,6 +57,7 @@ async def auth_callback(request: Request, response: Response):
     Handle the callback after successful or failed ThaID login.
     """
     # Obtain the access token and user info from ThaID
+    # ส่ง kwargs เพิ่มเติมเผื่อกรณีต้องดึง token แล้วต้องมี header
     token = await oauth.thaid.authorize_access_token(request)
     user_info = token.get('userinfo')
     
