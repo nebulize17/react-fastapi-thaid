@@ -18,7 +18,8 @@ oauth = OAuth()
 
 # ถ้ามี API Key จะส่งไปใน header ของ request ด้วยเผื่อ DTAM Gateway หรือ BORA ต้องการ
 client_kwargs = {
-    'scope': 'openid pid address gender birthdate given_name middle_name family_name name given_name_en middle_name_en family_name_en name_en title title_en ial smartcard_code date_of_expiry date_of_issuance'
+    'scope': 'openid pid address gender birthdate given_name middle_name family_name name given_name_en middle_name_en family_name_en name_en title title_en ial smartcard_code date_of_expiry date_of_issuance',
+    'token_endpoint_auth_method': 'client_secret_post'
 }
 if THAID_API_KEY:
     # เพิ่ม API Key ลงใน headers เผื่อกรณีใช้ผ่าน DTAM API Gateway
