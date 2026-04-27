@@ -11,7 +11,10 @@ from app.config import (
     THAID_CALLBACK_ENDPOINT
 )
 import jwt
+import logging
 from datetime import datetime, timedelta, timezone
+
+logger = logging.getLogger("thaid-auth")
 
 router = APIRouter()
 oauth = OAuth()
@@ -44,12 +47,23 @@ def create_jwt_token(data: dict):
     return jwt.encode(to_encode, JWT_SECRET_KEY, algorithm="HS256")
 
 @router.get("/login")
-async def login(request: Request):
+async def login(request: Request, mac: str = None, ip: str = None, url: str = None):
     """
-    Initiate the ThaID OAuth2 Login Flow.
+    Initiate the ThaID OAuth2 Login Flow. Supports Captive Portal parameters.
     """
+    # Store parameters in session to use after successful callback
+    if mac: request.session['guest_mac'] = mac
+    if ip: request.session['guest_ip'] = ip
+    if url: request.session['original_url'] = url
+
     # ถ้ามีการกำหนด THAID_CALLBACK_ENDPOINT จาก DTAM ให้ใช้ค่านั้นเป็น redirect_uri หลัก
     redirect_uri = THAID_CALLBACK_ENDPOINT if THAID_CALLBACK_ENDPOINT else str(request.url_for('auth_callback'))
+    
+    # Force HTTPS for DTAM gateway if it's somehow getting http
+    if THAID_CALLBACK_ENDPOINT and THAID_CALLBACK_ENDPOINT.startswith("https://"):
+        redirect_uri = redirect_uri.replace("http://", "https://", 1)
+        
+    logger.info(f"Initiating login with redirect_uri: {redirect_uri}")
     return await oauth.thaid.authorize_redirect(request, redirect_uri)
 
 @router.get("/callback")
@@ -57,20 +71,43 @@ async def auth_callback(request: Request, response: Response):
     """
     Handle the callback after successful or failed ThaID login.
     """
-    # Obtain the access token and user info from ThaID
-    # ส่ง kwargs เพิ่มเติมเผื่อกรณีต้องดึง token แล้วต้องมี header
-    token = await oauth.thaid.authorize_access_token(request)
-    user_info = token.get('userinfo')
-    
-    if not user_info:
-        return RedirectResponse(url=f"{FRONTEND_URL}/?error=no_userinfo")
+    try:
+        # ดึง redirect_uri มาใช้ยืนยันอีกครั้ง (ต้องเหมือนกับตอนส่งไปตอนแรกเป๊ะ)
+        redirect_uri = THAID_CALLBACK_ENDPOINT if THAID_CALLBACK_ENDPOINT else str(request.url_for('auth_callback'))
+        if redirect_uri.startswith("http://") and "dtam.moph.go.th" in redirect_uri:
+            redirect_uri = redirect_uri.replace("http://", "https://", 1)
+
+        # Obtain the access token and user info from ThaID
+        # ระบุ redirect_uri ลงไปตรงๆ เพื่อป้องกันปัญหา Gateway สลับ http/https
+        token = await oauth.thaid.authorize_access_token(request, redirect_uri=redirect_uri)
+        user_info = token.get('userinfo')
+        
+        if not user_info:
+            logger.error("No userinfo found in token.")
+            return RedirectResponse(url=f"{FRONTEND_URL}/?error=no_userinfo")
+
+    except Exception as e:
+        # พิมพ์ Error ลง Console เพื่อให้เช็คผ่าน Docker Logs ได้
+        print(f"Auth Callback Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return RedirectResponse(url=f"{FRONTEND_URL}/?error=callback_failed&detail={str(e)}")
 
     # Generate an internal JWT session token
     # We embed the whole user_info dictionary to be decoded later
     jwt_token = create_jwt_token({"user": user_info})
     
-    # Redirect to the frontend Dashboard
-    res = RedirectResponse(url=f"{FRONTEND_URL}/dashboard")
+    # Retrieve Captive Portal parameters from session
+    original_url = request.session.get('original_url')
+    guest_mac = request.session.get('guest_mac')
+    
+    # Determine final redirect URL (Captive Portal success page or default dashboard)
+    target_url = original_url if original_url else f"{FRONTEND_URL}/dashboard"
+
+    logger.info(f"Login success for {user_info.get('name')}. Redirecting to: {target_url}")
+
+    # Redirect to the frontend Dashboard or Original URL
+    res = RedirectResponse(url=target_url)
     
     # Store the JWT token securely in a HttpOnly cookie
     res.set_cookie(
