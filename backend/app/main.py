@@ -29,13 +29,14 @@ class ForceSchemeMiddleware:
         return await self.app(scope, receive, send)
 
 # We need session middleware for Authlib's OAuth implementation
-# ตั้งค่าให้รองรับการทำงานผ่าน Proxy HTTPS
+# ตั้งค่าให้รองรับการทำงานผ่าน Proxy HTTPS (เปิด https_only เฉพาะเมื่อ callback เป็น https)
+callback_url = os.getenv("THAID_CALLBACK_ENDPOINT", "")
 app.add_middleware(
     SessionMiddleware, 
     secret_key=os.getenv("JWT_SECRET_KEY", "super-secret"),
     session_cookie="thaid_session",
     same_site="lax",
-    https_only=True
+    https_only=True if callback_url.startswith("https://") else False
 )
 app.add_middleware(
     CORSMiddleware,
