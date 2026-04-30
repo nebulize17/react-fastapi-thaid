@@ -79,7 +79,7 @@ async def auth_callback(request: Request, response: Response):
 
         # Obtain the access token and user info from ThaID
         # ระบุ redirect_uri ลงไปตรงๆ เพื่อป้องกันปัญหา Gateway สลับ http/https
-        token = await oauth.thaid.authorize_access_token(request, redirect_uri=redirect_uri)
+        token = await oauth.thaid.authorize_access_token(request)
         user_info = token.get('userinfo')
         
         if not user_info:
