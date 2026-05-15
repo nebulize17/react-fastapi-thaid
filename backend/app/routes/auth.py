@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, HTMLResponse
 from authlib.integrations.starlette_client import OAuth
 from app.config import (
     THAID_CLIENT_ID,
@@ -8,10 +8,15 @@ from app.config import (
     FRONTEND_URL,
     JWT_SECRET_KEY,
     THAID_API_KEY,
-    THAID_CALLBACK_ENDPOINT
+    THAID_CALLBACK_ENDPOINT,
+    CPPM_HOST,
+    CPPM_CLIENT_ID,
+    CPPM_CLIENT_SECRET,
+    CPPM_LOGIN_URL
 )
 import jwt
 import logging
+import httpx
 from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger("thaid-auth")
@@ -46,8 +51,54 @@ def create_jwt_token(data: dict):
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, JWT_SECRET_KEY, algorithm="HS256")
 
+async def create_cppm_user(pid: str):
+    """
+    Create a guest account in Aruba ClearPass using the PID as username.
+    """
+    if not CPPM_HOST or not CPPM_CLIENT_ID:
+        logger.warning("ClearPass configuration missing. Skipping user creation.")
+        return False
+
+    try:
+        async with httpx.AsyncClient(verify=False) as client:
+            # 1. Get OAuth Token from ClearPass
+            token_url = f"https://{CPPM_HOST}/api/oauth"
+            token_data = {
+                "grant_type": "client_credentials",
+                "client_id": CPPM_CLIENT_ID,
+                "client_secret": CPPM_CLIENT_SECRET
+            }
+            token_res = await client.post(token_url, data=token_data)
+            token_res.raise_for_status()
+            access_token = token_res.json().get("access_token")
+
+            # 2. Create/Update Guest User
+            # We use PID as both username and password for simplicity in this demo
+            user_url = f"https://{CPPM_HOST}/api/guest"
+            user_payload = {
+                "enabled": True,
+                "username": pid,
+                "password": pid,
+                "visitor_name": f"ThaiD User {pid}",
+                "expire_after": 480, # 8 hours
+                "role_id": 2 # Guest Role ID
+            }
+            headers = {"Authorization": f"Bearer {access_token}"}
+            user_res = await client.post(user_url, json=user_payload, headers=headers)
+            
+            # If user already exists (409), we might want to update or just ignore
+            if user_res.status_code in [201, 200, 409]:
+                logger.info(f"ClearPass user {pid} created or already exists.")
+                return True
+            else:
+                logger.error(f"ClearPass User Creation Failed: {user_res.text}")
+                return False
+    except Exception as e:
+        logger.error(f"Error connecting to ClearPass: {str(e)}")
+        return False
+
 @router.get("/login")
-async def login(request: Request, mac: str = None, ip: str = None, url: str = None):
+async def login(request: Request, mac: str = None, ip: str = None, url: str = None, magic: str = None, fw_ip: str = None):
     """
     Initiate the ThaID OAuth2 Login Flow. Supports Captive Portal parameters.
     """
@@ -55,6 +106,8 @@ async def login(request: Request, mac: str = None, ip: str = None, url: str = No
     if mac: request.session['guest_mac'] = mac
     if ip: request.session['guest_ip'] = ip
     if url: request.session['original_url'] = url
+    if magic: request.session['fortigate_magic'] = magic
+    if fw_ip: request.session['fortigate_ip'] = fw_ip
 
     # ถ้ามีการกำหนด THAID_CALLBACK_ENDPOINT จาก DTAM ให้ใช้ค่านั้นเป็น redirect_uri หลัก
     redirect_uri = THAID_CALLBACK_ENDPOINT if THAID_CALLBACK_ENDPOINT else str(request.url_for('auth_callback'))
@@ -99,15 +152,42 @@ async def auth_callback(request: Request, response: Response):
     
     # Retrieve Captive Portal parameters from session
     original_url = request.session.get('original_url')
-    guest_mac = request.session.get('guest_mac')
+    fortigate_magic = request.session.get('fortigate_magic')
+    fortigate_ip = request.session.get('fortigate_ip')
     
-    # Determine final redirect URL (Captive Portal success page or default dashboard)
-    target_url = original_url if original_url else f"{FRONTEND_URL}/dashboard"
+    # Create ClearPass User (Optional)
+    cppm_success = await create_cppm_user(user_info.get('pid'))
+    
+    # Check if this is a FortiGate authentication request
+    if fortigate_magic and fortigate_ip:
+        logger.info(f"FortiGate handover detected for {user_info.get('pid')}")
+        # Return auto-submit form to FortiGate
+        html_content = f"""
+        <html>
+        <head><title>Connecting to Wi-Fi...</title></head>
+        <body onload="document.forms[0].submit()">
+            <form method="POST" action="https://{fortigate_ip}:1000/fgtauth">
+                <input type="hidden" name="magic" value="{fortigate_magic}">
+                <input type="hidden" name="username" value="{user_info.get('pid')}">
+                <input type="hidden" name="answer" value="1">
+            </form>
+            <div style="text-align:center; margin-top:50px; font-family: sans-serif;">
+                <h2>ยืนยันตัวตนสำเร็จ</h2>
+                <p>กำลังเชื่อมต่ออินเทอร์เน็ต กรุณารอสักครู่...</p>
+            </div>
+        </body>
+        </html>
+        """
+        res = HTMLResponse(content=html_content)
+    else:
+        # Determine final redirect URL for non-FortiGate cases
+        if cppm_success and CPPM_LOGIN_URL:
+            target_url = f"{CPPM_LOGIN_URL}?user={user_info.get('pid')}&password={user_info.get('pid')}&submit=Login"
+        else:
+            target_url = original_url if original_url else f"{FRONTEND_URL}/dashboard"
 
-    logger.info(f"Login success for {user_info.get('name')}. Redirecting to: {target_url}")
-
-    # Redirect to the frontend Dashboard or Original URL
-    res = RedirectResponse(url=target_url)
+        logger.info(f"Login success for {user_info.get('name')}. Redirecting to: {target_url}")
+        res = RedirectResponse(url=target_url)
     
     # Store the JWT token securely in a HttpOnly cookie
     res.set_cookie(
