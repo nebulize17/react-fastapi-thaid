@@ -1,39 +1,24 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import QRCode from 'qrcode'
 
 // ============================================================
-// QR Code Generator (ใช้ QRCode.js ผ่าน CDN ที่ inject ใน index.html)
+// QR Code Generator — ใช้ qrcode npm package (ไม่ต้องพึ่ง CDN)
 // ============================================================
 function useQRCode(canvasRef, url) {
   useEffect(() => {
     if (!canvasRef.current || !url) return
-    // ใช้ qrcode-generator library (inject via script tag)
-    if (typeof window.qrcode === 'undefined') return
 
-    const qr = window.qrcode(0, 'M')
-    qr.addData(url)
-    qr.make()
-
-    const canvas = canvasRef.current
-    const size = canvas.width
-    const ctx = canvas.getContext('2d')
-    const moduleCount = qr.getModuleCount()
-    const cellSize = size / moduleCount
-
-    ctx.clearRect(0, 0, size, size)
-    ctx.fillStyle = '#FFFFFF'
-    ctx.fillRect(0, 0, size, size)
-
-    for (let row = 0; row < moduleCount; row++) {
-      for (let col = 0; col < moduleCount; col++) {
-        ctx.fillStyle = qr.isDark(row, col) ? '#0F3A6C' : '#FFFFFF'
-        ctx.fillRect(
-          Math.round(col * cellSize),
-          Math.round(row * cellSize),
-          Math.ceil(cellSize),
-          Math.ceil(cellSize)
-        )
-      }
-    }
+    QRCode.toCanvas(canvasRef.current, url, {
+      width: 240,
+      margin: 2,
+      color: {
+        dark: '#0F3A6C',
+        light: '#FFFFFF',
+      },
+      errorCorrectionLevel: 'M',
+    }).catch(err => {
+      console.error('QR Code generation error:', err)
+    })
   }, [url, canvasRef])
 }
 
