@@ -155,7 +155,9 @@ export default function Dashboard() {
                 ข้อมูลผู้เข้าใช้งานระบบ
               </div>
               <h2 style={{ fontSize: '28px', fontWeight: '800', margin: 0, lineHeight: '1.2' }}>
-                {user?.title} {user?.name}
+                {user?.name && user?.title && user.name.startsWith(user.title) 
+                  ? user.name 
+                  : `${user?.title || ''} ${user?.name || ''}`.trim()}
               </h2>
               <div style={{
                 display: 'inline-flex',
@@ -198,7 +200,7 @@ export default function Dashboard() {
               gap: '24px',
               marginBottom: '32px'
             }}>
-              <InfoRow label="ชื่อสากล (English Name)" value={`${user?.title_en || ''} ${user?.given_name_en || ''} ${user?.middle_name_en || ''} ${user?.family_name_en || ''}`.trim()} />
+              <InfoRow label="ชื่อสากล (English Name)" value={user?.name_en || `${user?.title_en || ''} ${user?.given_name_en || ''} ${user?.middle_name_en || ''} ${user?.family_name_en || ''}`.trim()} />
               <InfoRow label="วันเกิด (Birthdate)" value={user?.birthdate} />
               <InfoRow label="เพศ (Gender)" value={user?.gender === '1' ? 'ชาย' : user?.gender === '2' ? 'หญิง' : user?.gender || '-'} />
               <InfoRow label="ที่อยู่ตามทะเบียนบ้าน (Official Address)" value={user?.address} isFullWidth={true} />
