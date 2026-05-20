@@ -21,11 +21,11 @@ function App() {
   let content
   if (currentPath === '/dashboard') {
     content = <Dashboard />
-  } else if (currentPath === '/login') {
-    content = <Login />
-  } else {
-    // หน้าหลัก: Captive Portal (QR Code)
+  } else if (currentPath === '/qr') {
     content = <QRPortal />
+  } else {
+    // หน้าหลัก: Captive Portal (ปุ่มล็อกอินเปลี่ยนเส้นทางไป BORA)
+    content = <Login />
   }
 
   return (

@@ -6,7 +6,7 @@ export default function Login() {
 
   const handleLogin = () => {
     // Using relative path to work on both local and Ubuntu
-    window.location.href = '/api/auth/login'
+    window.location.href = '/api/auth/login' + window.location.search
   }
 
   return (
