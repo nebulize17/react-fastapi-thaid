@@ -12,6 +12,26 @@ load_dotenv()
 
 app = FastAPI(title="ThaID Auth API")
 
+# ============================================================
+# In-Memory QR Session Store
+# Key: session_id (str UUID)
+# Value: {
+#   "status": "pending" | "success" | "error",
+#   "mac": str,
+#   "ip": str,
+#   "original_url": str,
+#   "magic": str,
+#   "fw_ip": str,
+#   "user_info": dict | None,
+#   "created_at": float (unix timestamp),
+# }
+# ============================================================
+from typing import Dict, Any
+qr_sessions: Dict[str, Any] = {}
+
+# Make it accessible from routes
+app.state.qr_sessions = qr_sessions
+
 # Standard proxy headers middleware
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 

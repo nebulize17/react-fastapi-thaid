@@ -1,36 +1,576 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* ============================================================
+   CAPTIVE PORTAL — Global CSS (Tailwind-free, Vanilla CSS)
+   Color System: Government Blue (#0F3A6C) + Thai Flag Palette
+   ============================================================ */
 
-@layer base {
-  body {
-    @apply antialiased text-slate-800 bg-slate-50;
-    font-family: 'Sarabun', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  }
+@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+
+/* ── Reset & Root ────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 :root {
-  --gov-navy: #003366;
-  --gov-green: #006633;
-  --gov-white: #ffffff;
+  --primary:       #0F3A6C;
+  --primary-light: #1a5a9a;
+  --primary-dark:  #082850;
+  --accent:        #C8A951;      /* ทองราชการ */
+  --success:       #16a34a;
+  --success-bg:    #dcfce7;
+  --warning:       #d97706;
+  --danger:        #dc2626;
+  --danger-bg:     #fee2e2;
+  --surface:       #ffffff;
+  --bg:            #eef2f7;
+  --border:        #d1d9e0;
+  --text:          #1a2332;
+  --text-muted:    #6b7280;
+  --text-light:    #9ca3af;
+  --shadow-sm:     0 2px 8px rgba(15,58,108,0.08);
+  --shadow-md:     0 8px 30px rgba(15,58,108,0.12);
+  --shadow-lg:     0 20px 60px rgba(15,58,108,0.18);
+  --radius:        16px;
+  --radius-sm:     10px;
 }
 
-@layer utilities {
-  .animation-delay-2000 {
-    animation-delay: 2s;
+html, body {
+  height: 100%;
+  font-family: 'Sarabun', 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* ── Portal Root ─────────────────────────────────────────── */
+.portal-root {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background:
+    radial-gradient(ellipse at 20% 20%, rgba(15,58,108,0.12) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 80%, rgba(200,169,81,0.08) 0%, transparent 60%),
+    linear-gradient(160deg, #dce8f5 0%, #eef2f7 50%, #e8edf5 100%);
+  background-attachment: fixed;
+}
+
+/* ── Portal Card ─────────────────────────────────────────── */
+.portal-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid rgba(255,255,255,0.8);
+  border-top: 5px solid var(--primary);
+  width: 100%;
+  max-width: 480px;
+  overflow: hidden;
+  animation: slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both;
+  padding: 0 0 28px 0;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Portal Header ───────────────────────────────────────── */
+.portal-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 24px 28px 20px;
+  border-bottom: 1px solid #f0f3f7;
+  background: linear-gradient(135deg, #fafbfd 0%, #f3f7fc 100%);
+}
+
+.header-logo {
+  height: 52px;
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.header-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--primary);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+/* ── WiFi Badge ──────────────────────────────────────────── */
+.wifi-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 20px 28px 0;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.wifi-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.wifi-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Steps Instruction ───────────────────────────────────── */
+.qr-instruction {
+  margin: 20px 28px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.step-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.step-num {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  background: var(--primary);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 1px;
+}
+
+.step-row strong {
+  color: var(--primary);
+}
+
+/* ── QR Code Section ─────────────────────────────────────── */
+.qr-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 24px 28px 0;
+}
+
+.qr-frame {
+  position: relative;
+  padding: 16px;
+  background: white;
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.qr-canvas {
+  display: block;
+  border-radius: 4px;
+}
+
+/* QR Corner Decorations */
+.qr-corner {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-color: var(--primary);
+  border-style: solid;
+}
+.qr-tl { top: 6px; left: 6px;  border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
+.qr-tr { top: 6px; right: 6px; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
+.qr-bl { bottom: 6px; left: 6px;  border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
+.qr-br { bottom: 6px; right: 6px; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
+
+.qr-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.qr-label-icon {
+  width: 16px;
+  height: 16px;
+  display: flex;
+}
+
+.qr-label-icon svg {
+  width: 100%;
+  height: 100%;
+  stroke: var(--primary-light);
+}
+
+/* ── Countdown ───────────────────────────────────────────── */
+.countdown-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 20px;
+}
+
+.countdown-hint {
+  font-size: 12px;
+  color: var(--text-light);
+  margin-top: -4px;
+}
+
+/* ── Poll Indicator ──────────────────────────────────────── */
+.poll-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.poll-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--primary-light);
+  border-radius: 50%;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.8); }
+}
+
+/* ── Card Footer ─────────────────────────────────────────── */
+.card-footer {
+  margin: 20px 28px 0;
+  padding-top: 16px;
+  border-top: 1px solid #f0f3f7;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-light);
+  line-height: 1.8;
+}
+
+.card-footer a {
+  color: var(--primary-light);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── Loading Spinner ─────────────────────────────────────── */
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid #e5e7eb;
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 40px auto 16px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 15px;
+  padding-bottom: 40px;
+}
+
+/* ── Status Icons (expired / error) ─────────────────────── */
+.status-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 32px auto 16px;
+}
+
+.status-icon svg {
+  width: 36px;
+  height: 36px;
+}
+
+.expired-icon {
+  background: #fef3c7;
+}
+
+.expired-icon svg {
+  stroke: #d97706;
+}
+
+.error-icon {
+  background: var(--danger-bg);
+}
+
+.error-icon svg {
+  stroke: var(--danger);
+}
+
+.state-title {
+  text-align: center;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  padding: 0 28px;
+}
+
+.state-sub {
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  padding: 0 28px;
+  line-height: 1.6;
+}
+
+/* ── Refresh Button ──────────────────────────────────────── */
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 24px auto 8px;
+  padding: 14px 32px;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: 'Sarabun', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+  box-shadow: 0 4px 14px rgba(15,58,108,0.3);
+}
+
+.refresh-btn:hover {
+  background: var(--primary-light);
+  box-shadow: 0 6px 20px rgba(15,58,108,0.4);
+  transform: translateY(-1px);
+}
+
+.refresh-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(15,58,108,0.25);
+}
+
+.refresh-icon {
+  width: 18px;
+  height: 18px;
+  display: flex;
+}
+
+.refresh-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* ── SUCCESS STATE ───────────────────────────────────────── */
+.success-card {
+  border-top-color: var(--success);
+  padding-bottom: 36px;
+}
+
+.success-icon-wrap {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  margin: 36px auto 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.success-icon {
+  width: 80px;
+  height: 80px;
+  background: var(--success-bg);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: popIn 0.5s cubic-bezier(0.34,1.56,0.64,1) both;
+  z-index: 1;
+  position: relative;
+}
+
+.success-icon svg {
+  width: 40px;
+  height: 40px;
+  stroke: var(--success);
+}
+
+.success-ripple {
+  position: absolute;
+  inset: -8px;
+  border: 3px solid var(--success);
+  border-radius: 50%;
+  opacity: 0;
+  animation: ripple 1.5s ease-out 0.3s infinite;
+}
+
+@keyframes ripple {
+  0%   { opacity: 0.6; transform: scale(0.9); }
+  100% { opacity: 0;   transform: scale(1.4); }
+}
+
+@keyframes popIn {
+  0%   { transform: scale(0.4); opacity: 0; }
+  100% { transform: scale(1);   opacity: 1; }
+}
+
+.success-title {
+  text-align: center;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--success);
+  padding: 0 28px;
+}
+
+.success-sub {
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  padding: 0 28px;
+}
+
+.user-badge {
+  margin: 20px 28px 0;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.user-name {
+  display: block;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.user-pid {
+  display: block;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  font-family: 'Inter', monospace;
+  letter-spacing: 0.05em;
+}
+
+/* ── Connecting Indicator ────────────────────────────────── */
+.connecting-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 20px 28px 0;
+  padding: 12px 16px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--success);
+  font-weight: 500;
+}
+
+.dot-pulse {
+  display: flex;
+  gap: 4px;
+}
+
+.dot-pulse span {
+  width: 6px;
+  height: 6px;
+  background: var(--success);
+  border-radius: 50%;
+  animation: dotBounce 1.2s ease-in-out infinite;
+}
+
+.dot-pulse span:nth-child(2) { animation-delay: 0.2s; }
+.dot-pulse span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes dotBounce {
+  0%, 80%, 100% { transform: scale(0.7); opacity: 0.5; }
+  40%           { transform: scale(1);   opacity: 1; }
+}
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .portal-root {
+    padding: 12px;
+    align-items: flex-start;
+    padding-top: 20px;
   }
-  .animation-delay-4000 {
-    animation-delay: 4s;
+
+  .portal-card {
+    border-radius: 12px;
+    max-width: 100%;
   }
-}
 
-@keyframes blob {
-  0% { transform: translate(0px, 0px) scale(1); }
-  33% { transform: translate(30px, -50px) scale(1.1); }
-  66% { transform: translate(-20px, 20px) scale(0.9); }
-  100% { transform: translate(0px, 0px) scale(1); }
-}
+  .portal-header {
+    padding: 18px 20px 16px;
+  }
 
-.animate-blob {
-  animation: blob 7s infinite;
+  .qr-instruction,
+  .wifi-badge,
+  .qr-wrap,
+  .card-footer,
+  .user-badge,
+  .connecting-indicator {
+    margin-left: 20px;
+    margin-right: 20px;
+  }
+
+  .state-title, .state-sub, .success-title, .success-sub {
+    padding: 0 20px;
+  }
+
+  .qr-canvas {
+    width: 200px !important;
+    height: 200px !important;
+  }
 }

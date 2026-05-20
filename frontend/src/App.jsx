@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import QRPortal from './components/QRPortal'
 import Login from './components/Login'
 import Dashboard from './components/Dashboard'
 
@@ -13,14 +14,22 @@ function App() {
     return () => window.removeEventListener('popstate', handleLocationChange)
   }, [])
 
-  // Simple basic routing
-  let content = <Login />
+  // ── Routing ──────────────────────────────────────────────
+  // /             → QRPortal (Captive Portal หน้าหลัก — FortiGate redirect มาที่นี่)
+  // /login        → Login (fallback สำหรับ redirect-based login)
+  // /dashboard    → Dashboard (แสดงข้อมูลผู้ใช้หลัง auth)
+  let content
   if (currentPath === '/dashboard') {
     content = <Dashboard />
+  } else if (currentPath === '/login') {
+    content = <Login />
+  } else {
+    // หน้าหลัก: Captive Portal (QR Code)
+    content = <QRPortal />
   }
 
   return (
-    <div className="min-h-screen">
+    <div style={{ minHeight: '100vh' }}>
       {content}
     </div>
   )
