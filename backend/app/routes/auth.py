@@ -62,27 +62,27 @@ def create_jwt_token(data: dict):
 # ============================================================
 # Helper: Build ThaiD Authorization URL (for QR Code)
 # ============================================================
-def build_thaid_auth_url(state_payload: dict) -> str:
+def build_thaid_auth_url(session_id: str) -> str:
     """
     สร้าง ThaiD OAuth2 Authorization URL สำหรับ QR Code
-    ใช้ v1 ตามมาตรฐาน BORA/DTAM Production
-    state จะเก็บ session_id และ captive portal parameters
+    - state = แค่ session_id (ไม่ encode JSON ซ้ำซ้อน)
+    - scope = minimal ตาม standalone_portal.html
+    - ใช้ v1 ตาม BORA/DTAM Production
     """
     callback_uri = THAID_CALLBACK_ENDPOINT or ""
-    # Scope ที่รองรับโดย ThaiD (ตาม Official Sample ของ BORA)
-    scope = "openid pid name name_en given_name_en family_name_en title title_en"
-    state = quote(json.dumps(state_payload, ensure_ascii=False))
+    # Minimal scope ตาม Official DTAM standalone_portal.html
+    scope = "pid openid"
 
-    # ใช้ v1 ตาม BORA/DTAM Production (standalone_portal.html และ main.py เดิม)
+    # state = แค่ session_id string เท่านั้น (ข้อมูล captive portal เก็บใน qr_sessions แล้ว)
     base_url = "https://imauth.bora.dopa.go.th/api/v1/oauth2/auth"
-    params = {
-        "response_type": "code",
-        "client_id": THAID_CLIENT_ID,
-        "redirect_uri": callback_uri,
-        "scope": scope,
-        "state": state,
-    }
-    return f"{base_url}?{urlencode(params, quote_via=quote)}"
+    query = (
+        f"response_type=code"
+        f"&client_id={quote(THAID_CLIENT_ID, safe='')}"
+        f"&redirect_uri={quote(callback_uri, safe='')}"
+        f"&scope={quote(scope, safe='')}"
+        f"&state={quote(session_id, safe='')}"
+    )
+    return f"{base_url}?{query}"
 
 
 # ============================================================
@@ -172,16 +172,7 @@ async def create_qr_session(
     effective_fw_ip = fw_ip or FORTIGATE_IP
 
     # State payload ที่จะส่งไปกับ ThaiD OAuth และจะกลับมาใน callback
-    state_payload = {
-        "sid": session_id,          # QR Session ID
-        "mac": mac or "",
-        "ip": ip or "",
-        "url": url or "",
-        "magic": magic or "",
-        "fw_ip": effective_fw_ip,
-    }
-
-    # บันทึก session
+    # บันทึก session — เก็บ captive portal params ทั้งหมดไว้ใน store
     qr_sessions[session_id] = {
         "status": "pending",
         "mac": mac or "",
@@ -193,8 +184,8 @@ async def create_qr_session(
         "created_at": now,
     }
 
-    # สร้าง ThaiD URL สำหรับ QR Code
-    thaid_url = build_thaid_auth_url(state_payload)
+    # สร้าง ThaiD URL สำหรับ QR Code — ส่งแค่ session_id เป็น state
+    thaid_url = build_thaid_auth_url(session_id)
 
     expires_in = QR_SESSION_TTL_SECONDS
     return JSONResponse({
@@ -290,17 +281,12 @@ async def auth_callback(request: Request, response: Response):
 
         if not user_info:
             logger.error("No userinfo found in token.")
-            # พยายามดึง state เพื่อ redirect กลับหน้า portal พร้อม error
+            # state = session_id ตรงๆ (ไม่ใช่ JSON แล้ว)
             raw_state = request.query_params.get("state", "")
-            try:
-                state_data = json.loads(raw_state)
-                session_id = state_data.get("sid")
-                if session_id:
-                    qr_sessions = request.app.state.qr_sessions
-                    if session_id in qr_sessions:
-                        qr_sessions[session_id]["status"] = "error"
-            except Exception:
-                pass
+            if raw_state:
+                qr_sessions = request.app.state.qr_sessions
+                if raw_state in qr_sessions:
+                    qr_sessions[raw_state]["status"] = "error"
             return RedirectResponse(url=f"{FRONTEND_URL}/?error=no_userinfo")
 
     except Exception as e:
@@ -312,23 +298,25 @@ async def auth_callback(request: Request, response: Response):
     # ============================================================
     # ตรวจสอบว่ามาจาก QR Flow (state มี "sid") หรือ redirect flow
     # ============================================================
+    # state = session_id string ตรงๆ (เปลี่ยนจาก JSON encoding แล้ว)
     raw_state = request.query_params.get("state", "")
     qr_session_id = None
     captive_data = {}
 
+    # ตรวจสอบว่า state ตรงกับ QR session ที่มีอยู่
     if raw_state:
-        try:
-            state_data = json.loads(raw_state)
-            qr_session_id = state_data.get("sid")
+        qr_sessions = request.app.state.qr_sessions
+        if raw_state in qr_sessions:
+            # QR Flow: state = session_id ตรงๆ
+            qr_session_id = raw_state
+            sess = qr_sessions[raw_state]
             captive_data = {
-                "mac": state_data.get("mac", ""),
-                "ip": state_data.get("ip", ""),
-                "original_url": state_data.get("url", ""),
-                "magic": state_data.get("magic", ""),
-                "fw_ip": state_data.get("fw_ip", FORTIGATE_IP),
+                "mac": sess.get("mac", ""),
+                "ip": sess.get("ip", ""),
+                "original_url": sess.get("original_url", ""),
+                "magic": sess.get("magic", ""),
+                "fw_ip": sess.get("fw_ip", FORTIGATE_IP),
             }
-        except (json.JSONDecodeError, Exception) as e:
-            logger.warning(f"Could not parse state: {e}")
 
     # Fallback: ดึงจาก session (redirect flow เดิม)
     if not captive_data.get("magic"):
