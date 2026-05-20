@@ -65,12 +65,16 @@ def create_jwt_token(data: dict):
 def build_thaid_auth_url(state_payload: dict) -> str:
     """
     สร้าง ThaiD OAuth2 Authorization URL สำหรับ QR Code
+    ใช้ v1 ตามมาตรฐาน BORA/DTAM Production
     state จะเก็บ session_id และ captive portal parameters
     """
     callback_uri = THAID_CALLBACK_ENDPOINT or ""
-    scope = "openid pid title title_en given_name_en family_name_en name name_en"
+    # Scope ที่รองรับโดย ThaiD (ตาม Official Sample ของ BORA)
+    scope = "openid pid name name_en given_name_en family_name_en title title_en"
     state = quote(json.dumps(state_payload, ensure_ascii=False))
 
+    # ใช้ v1 ตาม BORA/DTAM Production (standalone_portal.html และ main.py เดิม)
+    base_url = "https://imauth.bora.dopa.go.th/api/v1/oauth2/auth"
     params = {
         "response_type": "code",
         "client_id": THAID_CLIENT_ID,
@@ -78,7 +82,6 @@ def build_thaid_auth_url(state_payload: dict) -> str:
         "scope": scope,
         "state": state,
     }
-    base_url = "https://imauth.bora.dopa.go.th/api/v2/oauth2/auth"
     return f"{base_url}?{urlencode(params, quote_via=quote)}"
 
 
