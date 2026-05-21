@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 from authlib.integrations.starlette_client import OAuth
+import jwt
 from app.config import (
     THAID_CLIENT_ID,
     THAID_CLIENT_SECRET,
@@ -16,9 +17,11 @@ from app.config import (
     FORTIGATE_IP,
     FORTIGATE_AUTH_PORT,
     FORTIGATE_AUTH_PATH,
+    FORTIGATE_API_TOKEN,
+    FORTIGATE_AUTH_SERVER,
     QR_SESSION_TTL_SECONDS,
 )
-import jwt
+
 import uuid
 import time
 import json
@@ -125,7 +128,54 @@ async def create_cppm_user(pid: str):
 
 
 # ============================================================
-# Helper: Cleanup expired QR sessions
+# Helper: FortiGate REST API Authentication
+# ============================================================
+async def authenticate_fortigate_api(username: str, client_ip: str):
+    """
+    Authenticate the user session directly on FortiGate via REST API.
+    Endpoint: POST /api/v2/monitor/user/firewall/auth
+    """
+    if not FORTIGATE_API_TOKEN or FORTIGATE_API_TOKEN == "your_fortigate_api_token_here" or not FORTIGATE_API_TOKEN.strip():
+        logger.warning("FortiGate API Token missing or placeholder. Skipping REST API authentication.")
+        return False
+
+    if not client_ip:
+        logger.warning("Client IP is missing. Cannot authenticate session via REST API.")
+        return False
+
+    url = f"https://{FORTIGATE_IP}/api/v2/monitor/user/firewall/auth"
+    headers = {
+        "Authorization": f"Bearer {FORTIGATE_API_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "ip": client_ip,
+        "username": username,
+        "server": FORTIGATE_AUTH_SERVER or "local"
+    }
+
+    logger.info(f"Sending FortiGate REST API Auth for user '{username}' (IP: {client_ip}) to {url}")
+    try:
+        # Disable SSL verification since FortiGate might use self-signed certs in PoC
+        async with httpx.AsyncClient(verify=False) as client:
+            res = await client.post(url, json=payload, headers=headers, timeout=10)
+            logger.info(f"FortiGate REST API response status: {res.status_code}")
+            
+            try:
+                res_data = res.json()
+                logger.info(f"FortiGate REST API response: {json.dumps(res_data)}")
+            except Exception:
+                logger.info(f"FortiGate REST API raw response: {res.text}")
+
+            if res.status_code in [200, 201]:
+                logger.info(f"Successfully authenticated session on FortiGate via REST API for user '{username}'")
+                return True
+            else:
+                logger.error(f"FortiGate REST API Authentication Failed: {res.text}")
+                return False
+    except Exception as e:
+        logger.error(f"Error calling FortiGate REST API: {str(e)}")
+        return False
 # ============================================================
 def cleanup_expired_sessions(qr_sessions: dict):
     """ลบ session ที่หมดอายุแล้ว"""
@@ -232,6 +282,7 @@ async def get_qr_status(session_id: str, request: Request):
             "fw_ip": session.get("fw_ip", FORTIGATE_IP),
             "fw_port": FORTIGATE_AUTH_PORT,
             "fw_path": FORTIGATE_AUTH_PATH,
+            "username": session.get("username", ""),
             "user_info": session.get("user_info"),
         })
 
@@ -398,11 +449,29 @@ async def auth_callback(request: Request, response: Response):
     pid = user_info.get('pid') or user_info.get('sub', '')
     logger.info(f"ThaiD Callback success! PID: {pid}")
 
+    # Calculate custom username based on: English First Name + First 2 chars of English Last Name (lowercase)
+    given = user_info.get("given_name_en", "")
+    family = user_info.get("family_name_en", "")
+    if given and family:
+        username = (given.strip() + family.strip()[:2]).lower()
+        logger.info(f"Calculated username '{username}' from English name: '{given} {family}'")
+    else:
+        username = pid
+        logger.info(f"Missing given_name_en or family_name_en. Falling back to PID/sub as username: '{username}'")
+
     # สร้าง JWT session token
     jwt_token = create_jwt_token({"user": user_info})
 
     # สร้าง ClearPass user (optional)
-    await create_cppm_user(pid)
+    await create_cppm_user(username)
+
+    # Trigger FortiGate REST API Session Authentication
+    client_ip = captive_data.get("ip")
+    if client_ip:
+        logger.info(f"Triggering FortiGate REST API Auth for username '{username}' and IP '{client_ip}'")
+        await authenticate_fortigate_api(username, client_ip)
+    else:
+        logger.warning(f"No client IP found for user '{username}'. Skipping FortiGate REST API Auth.")
 
     # ============================================================
     # QR Flow: อัปเดต Session Store → Frontend Polling จะเจอ
@@ -413,10 +482,11 @@ async def auth_callback(request: Request, response: Response):
             qr_sessions[qr_session_id].update({
                 "status": "success",
                 "user_info": user_info,
+                "username": username,
                 "magic": captive_data.get("magic", qr_sessions[qr_session_id].get("magic", "")),
                 "fw_ip": captive_data.get("fw_ip", qr_sessions[qr_session_id].get("fw_ip", FORTIGATE_IP)),
             })
-            logger.info(f"QR Session {qr_session_id} updated to success for {pid}")
+            logger.info(f"QR Session {qr_session_id} updated to success for username '{username}'")
 
         # ส่งหน้า HTML ให้ Mobile แสดงว่า "สแกนสำเร็จ กลับไปดูหน้าจอหลัก"
         html_content = f"""<!DOCTYPE html>
@@ -485,13 +555,13 @@ async def auth_callback(request: Request, response: Response):
     original_url = captive_data.get("original_url")
 
     if fortigate_magic and fortigate_ip:
-        logger.info(f"FortiGate redirect handover for {pid}")
+        logger.info(f"FortiGate redirect handover for {username}")
         html_content = f"""<html>
 <head><title>กำลังเชื่อมต่อ...</title></head>
 <body onload="document.forms[0].submit()">
     <form method="POST" action="https://{fortigate_ip}:{FORTIGATE_AUTH_PORT}{FORTIGATE_AUTH_PATH}">
         <input type="hidden" name="magic" value="{fortigate_magic}">
-        <input type="hidden" name="username" value="{pid}">
+        <input type="hidden" name="username" value="{username}">
         <input type="hidden" name="answer" value="1">
     </form>
     <div style="text-align:center;margin-top:50px;font-family:Sarabun,sans-serif;">
@@ -504,7 +574,7 @@ async def auth_callback(request: Request, response: Response):
     else:
         cppm_success = bool(CPPM_LOGIN_URL)
         if cppm_success and CPPM_LOGIN_URL:
-            target_url = f"{CPPM_LOGIN_URL}?user={pid}&password={pid}&submit=Login"
+            target_url = f"{CPPM_LOGIN_URL}?user={username}&password={username}&submit=Login"
         else:
             target_url = original_url if original_url else f"{FRONTEND_URL}/dashboard"
         res = RedirectResponse(url=target_url)

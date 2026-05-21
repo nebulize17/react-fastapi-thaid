@@ -295,7 +295,7 @@ export default function QRPortal() {
             fwIp={successData.fw_ip}
             fwPort={successData.fw_port}
             fwPath={successData.fw_path}
-            username={successData.user_info?.pid}
+            username={successData.username || successData.user_info?.pid}
           />
           <div className="portal-card success-card">
             <div className="success-icon-wrap">
@@ -311,6 +311,11 @@ export default function QRPortal() {
                 <span className="user-name">
                   {successData.user_info.title} {successData.user_info.name || successData.user_info.given_name_en}
                 </span>
+                {successData.username && (
+                  <span className="user-username" style={{ display: 'block', fontSize: '14px', color: '#64748b', marginTop: '4px' }}>
+                    Username: <strong>{successData.username}</strong>
+                  </span>
+                )}
                 <span className="user-pid">
                   🪪 {successData.user_info.pid ? 'X'.repeat(10) + successData.user_info.pid.slice(-3) : '-'}
                 </span>
