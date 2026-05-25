@@ -570,8 +570,8 @@ async def auth_callback(request: Request, response: Response):
 
     # ถ้ามีค่า Magic ให้ทำการ Auto-Submit Form ไปที่ FortiGate เพื่อให้ทะลุอินเทอร์เน็ต
     if fortigate_magic:
-        # ใช้ auth_url ถ้ามี ส่งมาจาก FortiGate, มิฉะนั้นใช้ fw_ip ทั่วไป
-        post_target = auth_url if auth_url else f"https://{fortigate_ip}:1000/fgtauth"
+        # บังคับใช้ค่าจากคอนฟิก .env วงปัจจุบันเสมอ เพื่อความมั่นใจว่าชี้ถูกเกตเวย์
+        post_target = f"https://{FORTIGATE_IP}:{FORTIGATE_AUTH_PORT}{FORTIGATE_AUTH_PATH}"
         logger.info(f"FortiGate magic found. Auto-submitting credentials to {post_target}")
         
         # ใช้ User กลางที่กำหนด

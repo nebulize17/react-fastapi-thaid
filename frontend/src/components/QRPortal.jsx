@@ -102,7 +102,7 @@ function CountdownRing({ total, remaining }) {
 // ============================================================
 // FortiGate Auto-Submit Form (After Auth Success)
 // ============================================================
-function FortigateAutoSubmitForm({ magic, fwIp, authUrl }) {
+function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl }) {
   const formRef = useRef(null)
   
   useEffect(() => {
@@ -119,7 +119,8 @@ function FortigateAutoSubmitForm({ magic, fwIp, authUrl }) {
 
   if (!magic) return null
 
-  const postTarget = authUrl ? authUrl : `https://${fwIp || '192.168.254.253'}:1000/fgtauth`
+  // บังคับยิงไปที่ IP และพอร์ตของวงนี้โดยตรง เพื่อป้องกันค่าเก่าที่ค้างมาจาก FortiGate
+  const postTarget = `https://192.168.150.1:1442/fgtauth`;
 
   return (
     <form
@@ -300,7 +301,13 @@ export default function QRPortal() {
       {/* ── SUCCESS STATE ───────────────────────────────── */}
       {phase === 'success' && successData && (
         <>
-          <FortigateAutoSubmitForm magic={captiveParams.magic} fwIp={captiveParams.fw_ip} authUrl={successData.auth_url} />
+          <FortigateAutoSubmitForm
+            magic={captiveParams.magic}
+            fwIp={successData.fw_ip || captiveParams.fw_ip}
+            fwPort={successData.fw_port}
+            fwPath={successData.fw_path}
+            authUrl={successData.auth_url}
+          />
           <div className="portal-card success-card">
             <div className="success-icon-wrap">
               <div className="success-icon">
