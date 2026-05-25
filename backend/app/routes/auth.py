@@ -148,13 +148,16 @@ async def authenticate_fortigate_api(username: str, client_ip: str):
         "Authorization": f"Bearer {FORTIGATE_API_TOKEN}",
         "Content-Type": "application/json"
     }
+    # ใช้ User กลางที่สร้างไว้ใน FortiGate เสมอ เพื่อให้ FortiGate ยอมรับคำสั่ง 100%
+    fw_username = "thanphichetwi"
+    
     payload = {
         "ip": client_ip,
-        "username": username,
+        "username": fw_username,
         "server": FORTIGATE_AUTH_SERVER or "local"
     }
 
-    logger.info(f"Sending FortiGate REST API Auth for user '{username}' (IP: {client_ip}) to {url}")
+    logger.info(f"Sending FortiGate REST API Auth for user '{fw_username}' (Real user: '{username}', IP: {client_ip}) to {url}")
     try:
         # Disable SSL verification since FortiGate might use self-signed certs in PoC
         async with httpx.AsyncClient(verify=False) as client:
@@ -218,10 +221,11 @@ async def create_qr_session(
 
     # State payload ที่จะส่งไปกับ ThaiD OAuth และจะกลับมาใน callback
     # บันทึก session — เก็บ captive portal params ทั้งหมดไว้ใน store
+    client_ip = ip or (request.client.host if request.client else "")
     qr_sessions[session_id] = {
         "status": "pending",
         "mac": mac or "",
-        "ip": ip or "",
+        "ip": client_ip,
         "original_url": url or "",
         "magic": magic or "",
         "fw_ip": effective_fw_ip,
