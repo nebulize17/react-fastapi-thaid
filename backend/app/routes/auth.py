@@ -558,6 +558,9 @@ async def auth_callback(request: Request, response: Response):
     fortigate_magic = captive_data.get("magic")
     fortigate_ip = captive_data.get("fw_ip", FORTIGATE_IP)
     original_url = captive_data.get("original_url") or "https://www.google.com"
+    
+    # บังคับเด้งไป Google เสมอตามที่ผู้ใช้ร้องขอ (กันกรณีมันเด้งกลับมาหน้าเดิม)
+    force_redirect_url = "https://www.google.com"
 
     # ถ้ามีค่า Magic ให้ทำการ Auto-Submit Form ไปที่ FortiGate เพื่อให้ทะลุอินเทอร์เน็ต
     if fortigate_magic:
@@ -596,15 +599,15 @@ async def auth_callback(request: Request, response: Response):
                 <input type="hidden" name="magic" value="{fortigate_magic}" />
                 <input type="hidden" name="username" value="{fw_username}" />
                 <input type="hidden" name="password" value="{fw_password}" />
-                <input type="hidden" name="redir" value="{original_url}" />
+                <input type="hidden" name="redir" value="{force_redirect_url}" />
             </form>
         </body>
         </html>
         """
         res = HTMLResponse(content=html_content)
     else:
-        logger.info(f"No FortiGate magic found. Redirecting to final destination: {original_url}")
-        res = RedirectResponse(url=original_url)
+        logger.info(f"No FortiGate magic found. Redirecting to final destination: {force_redirect_url}")
+        res = RedirectResponse(url=force_redirect_url)
 
     res.set_cookie(key="auth_token", value=jwt_token, httponly=True, samesite="lax", max_age=7200)
     return res
