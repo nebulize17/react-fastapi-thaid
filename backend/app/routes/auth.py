@@ -557,17 +557,54 @@ async def auth_callback(request: Request, response: Response):
     # ============================================================
     fortigate_magic = captive_data.get("magic")
     fortigate_ip = captive_data.get("fw_ip", FORTIGATE_IP)
-    original_url = captive_data.get("original_url")
+    original_url = captive_data.get("original_url") or "https://www.google.com"
 
-    # ข้ามหน้าเว็บ FortiGate (fgtauth) ไปได้เลย เพราะเรายืนยันตัวตนหลังบ้านผ่าน REST API ไปแล้ว
-    cppm_success = bool(CPPM_LOGIN_URL)
-    if cppm_success and CPPM_LOGIN_URL:
-        target_url = f"{CPPM_LOGIN_URL}?user={username}&password={username}&submit=Login"
-    else:
-        target_url = original_url if original_url else f"{FRONTEND_URL}/dashboard"
+    # ถ้ามีค่า Magic ให้ทำการ Auto-Submit Form ไปที่ FortiGate เพื่อให้ทะลุอินเทอร์เน็ต
+    if fortigate_magic:
+        logger.info(f"FortiGate magic found. Auto-submitting credentials to {fortigate_ip}")
+        # ใช้ User กลางที่กำหนด
+        fw_username = "thanphichetwi"
+        fw_password = "Benz1711"
         
-    logger.info(f"Authorized successfully. Redirecting to final destination: {target_url}")
-    res = RedirectResponse(url=target_url)
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>กำลังพาคุณเข้าสู่อินเทอร์เน็ต...</title>
+            <style>
+                body {{ font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f3f4f6; }}
+                .loader {{ text-align: center; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+                .spinner {{ border: 4px solid #e5e7eb; border-top: 4px solid #008855; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px auto; }}
+                @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
+            </style>
+            <script type="text/javascript">
+                window.onload = function() {{
+                    setTimeout(function() {{
+                        document.getElementById("fgtauth-form").submit();
+                    }}, 1000);
+                }};
+            </script>
+        </head>
+        <body>
+            <div class="loader">
+                <div class="spinner"></div>
+                <h2>ยืนยันตัวตนสำเร็จ!</h2>
+                <p>ระบบกำลังพาคุณเข้าสู่อินเทอร์เน็ต...</p>
+            </div>
+            <form id="fgtauth-form" method="POST" action="https://{fortigate_ip}:1000/fgtauth" style="display: none;">
+                <input type="hidden" name="magic" value="{fortigate_magic}" />
+                <input type="hidden" name="username" value="{fw_username}" />
+                <input type="hidden" name="password" value="{fw_password}" />
+                <input type="hidden" name="redir" value="{original_url}" />
+            </form>
+        </body>
+        </html>
+        """
+        res = HTMLResponse(content=html_content)
+    else:
+        logger.info(f"No FortiGate magic found. Redirecting to final destination: {original_url}")
+        res = RedirectResponse(url=original_url)
 
     res.set_cookie(key="auth_token", value=jwt_token, httponly=True, samesite="lax", max_age=7200)
     return res
