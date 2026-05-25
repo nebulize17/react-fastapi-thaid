@@ -100,17 +100,38 @@ function CountdownRing({ total, remaining }) {
 }
 
 // ============================================================
-// Redirect Handler (After Auth Success)
+// FortiGate Auto-Submit Form (After Auth Success)
 // ============================================================
-function RedirectHandler({ originalUrl }) {
+function FortigateAutoSubmitForm({ magic, fwIp }) {
+  const formRef = useRef(null)
+  
   useEffect(() => {
     setTimeout(() => {
-      // Redirect ไปยังหน้าเว็บเดิมที่ผู้ใช้ต้องการ หรือ Google ถ้าไม่มี
-      window.location.href = originalUrl || 'https://www.google.com';
-    }, 2000) // รอ 2 วินาทีให้ user เห็น success screen ก่อน
-  }, [originalUrl])
+      if (magic && formRef.current) {
+        // ยิง Auto-Submit ไปที่ FortiGate พร้อม User/Pass
+        formRef.current.submit();
+      } else {
+        // ถ้าไม่มีค่า magic (เปิดเว็บมาทดสอบตรงๆ) ให้เด้งไป Google เลย
+        window.location.href = 'https://www.google.com';
+      }
+    }, 1500) // รอ 1.5 วินาทีให้ user เห็นหน้า Success ก่อน
+  }, [magic])
 
-  return null
+  if (!magic) return null
+
+  return (
+    <form
+      ref={formRef}
+      method="POST"
+      action={`https://${fwIp || '192.168.254.253'}:1000/fgtauth`}
+      style={{ display: 'none' }}
+    >
+      <input type="hidden" name="magic" value={magic} />
+      <input type="hidden" name="username" value="thanphichetwi" />
+      <input type="hidden" name="password" value="Benz1711" />
+      <input type="hidden" name="redir" value="https://www.google.com" />
+    </form>
+  )
 }
 
 // ============================================================
@@ -277,7 +298,7 @@ export default function QRPortal() {
       {/* ── SUCCESS STATE ───────────────────────────────── */}
       {phase === 'success' && successData && (
         <>
-          <RedirectHandler originalUrl={successData.original_url} />
+          <FortigateAutoSubmitForm magic={captiveParams.magic} fwIp={captiveParams.fw_ip} />
           <div className="portal-card success-card">
             <div className="success-icon-wrap">
               <div className="success-icon">
