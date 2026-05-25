@@ -203,6 +203,7 @@ async def create_qr_session(
     url: str = None,
     magic: str = None,
     fw_ip: str = None,
+    auth_url: str = None,
 ):
     """
     สร้าง QR Session ใหม่
@@ -229,6 +230,7 @@ async def create_qr_session(
         "original_url": url or "",
         "magic": magic or "",
         "fw_ip": effective_fw_ip,
+        "auth_url": auth_url or "",
         "user_info": None,
         "created_at": now,
     }
@@ -306,6 +308,7 @@ async def login(
     url: str = None,
     magic: str = None,
     fw_ip: str = None,
+    auth_url: str = None,
     qr_session: str = None,   # ← QR Flow: session_id จาก QR Code
 ):
     """Initiate the ThaID OAuth2 Login Flow. Supports Captive Portal parameters and QR session."""
@@ -315,6 +318,7 @@ async def login(
     if url: request.session['original_url'] = url
     if magic: request.session['fortigate_magic'] = magic
     if fw_ip: request.session['fortigate_ip'] = fw_ip
+    if auth_url: request.session['auth_url'] = auth_url
 
     # เก็บ QR session_id ไว้ใน HTTP session เพื่อดึงใน callback
     if qr_session:
@@ -557,6 +561,7 @@ async def auth_callback(request: Request, response: Response):
     # ============================================================
     fortigate_magic = captive_data.get("magic")
     fortigate_ip = captive_data.get("fw_ip", FORTIGATE_IP)
+    auth_url = captive_data.get("auth_url")
     original_url = captive_data.get("original_url") or "https://www.google.com"
     
     # บังคับเด้งไป Google เสมอตามที่ผู้ใช้ร้องขอ (กันกรณีมันเด้งกลับมาหน้าเดิม)
@@ -564,7 +569,10 @@ async def auth_callback(request: Request, response: Response):
 
     # ถ้ามีค่า Magic ให้ทำการ Auto-Submit Form ไปที่ FortiGate เพื่อให้ทะลุอินเทอร์เน็ต
     if fortigate_magic:
-        logger.info(f"FortiGate magic found. Auto-submitting credentials to {fortigate_ip}")
+        # ใช้ auth_url ถ้ามี ส่งมาจาก FortiGate, มิฉะนั้นใช้ fw_ip ทั่วไป
+        post_target = auth_url if auth_url else f"https://{fortigate_ip}:1000/fgtauth"
+        logger.info(f"FortiGate magic found. Auto-submitting credentials to {post_target}")
+        
         # ใช้ User กลางที่กำหนด
         fw_username = "thanphichetwi"
         fw_password = "Benz1711"
@@ -595,7 +603,7 @@ async def auth_callback(request: Request, response: Response):
                 <h2>ยืนยันตัวตนสำเร็จ!</h2>
                 <p>ระบบกำลังพาคุณเข้าสู่อินเทอร์เน็ต...</p>
             </div>
-            <form id="fgtauth-form" method="POST" action="https://{fortigate_ip}:1000/fgtauth" style="display: none;">
+            <form id="fgtauth-form" method="POST" action="{post_target}" style="display: none;">
                 <input type="hidden" name="magic" value="{fortigate_magic}" />
                 <input type="hidden" name="username" value="{fw_username}" />
                 <input type="hidden" name="password" value="{fw_password}" />
