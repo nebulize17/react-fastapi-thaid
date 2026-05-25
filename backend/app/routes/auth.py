@@ -284,6 +284,7 @@ async def get_qr_status(session_id: str, request: Request):
             "fw_path": FORTIGATE_AUTH_PATH,
             "username": session.get("username", ""),
             "user_info": session.get("user_info"),
+            "original_url": session.get("original_url", ""),
         })
 
     return JSONResponse(response_data)
@@ -554,30 +555,15 @@ async def auth_callback(request: Request, response: Response):
     fortigate_ip = captive_data.get("fw_ip", FORTIGATE_IP)
     original_url = captive_data.get("original_url")
 
-    if fortigate_magic and fortigate_ip:
-        logger.info(f"FortiGate redirect handover for {username}")
-        html_content = f"""<html>
-<head><title>กำลังเชื่อมต่อ...</title></head>
-<body onload="document.forms[0].submit()">
-    <form method="POST" action="https://{fortigate_ip}:{FORTIGATE_AUTH_PORT}{FORTIGATE_AUTH_PATH}">
-        <input type="hidden" name="magic" value="{fortigate_magic}">
-        <input type="hidden" name="username" value="{username}">
-        <input type="hidden" name="answer" value="1">
-    </form>
-    <div style="text-align:center;margin-top:50px;font-family:Sarabun,sans-serif;">
-        <h2>ยืนยันตัวตนสำเร็จ</h2>
-        <p>กำลังเชื่อมต่ออินเทอร์เน็ต กรุณารอสักครู่...</p>
-    </div>
-</body>
-</html>"""
-        res = HTMLResponse(content=html_content)
+    # ข้ามหน้าเว็บ FortiGate (fgtauth) ไปได้เลย เพราะเรายืนยันตัวตนหลังบ้านผ่าน REST API ไปแล้ว
+    cppm_success = bool(CPPM_LOGIN_URL)
+    if cppm_success and CPPM_LOGIN_URL:
+        target_url = f"{CPPM_LOGIN_URL}?user={username}&password={username}&submit=Login"
     else:
-        cppm_success = bool(CPPM_LOGIN_URL)
-        if cppm_success and CPPM_LOGIN_URL:
-            target_url = f"{CPPM_LOGIN_URL}?user={username}&password={username}&submit=Login"
-        else:
-            target_url = original_url if original_url else f"{FRONTEND_URL}/dashboard"
-        res = RedirectResponse(url=target_url)
+        target_url = original_url if original_url else f"{FRONTEND_URL}/dashboard"
+        
+    logger.info(f"Authorized successfully. Redirecting to final destination: {target_url}")
+    res = RedirectResponse(url=target_url)
 
     res.set_cookie(key="auth_token", value=jwt_token, httponly=True, samesite="lax", max_age=7200)
     return res

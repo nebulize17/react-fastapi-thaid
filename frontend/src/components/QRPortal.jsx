@@ -100,30 +100,17 @@ function CountdownRing({ total, remaining }) {
 }
 
 // ============================================================
-// FortiGate Auto-Submit Form (hidden)
+// Redirect Handler (After Auth Success)
 // ============================================================
-function FortigateForm({ magic, fwIp, fwPort, fwPath, username }) {
-  const formRef = useRef(null)
+function RedirectHandler({ originalUrl }) {
   useEffect(() => {
-    if (formRef.current && magic && fwIp) {
-      setTimeout(() => {
-        formRef.current?.submit()
-      }, 2000) // รอ 2 วินาทีให้ user เห็น success screen ก่อน
-    }
-  }, [magic, fwIp])
+    setTimeout(() => {
+      // Redirect ไปยังหน้าเว็บเดิมที่ผู้ใช้ต้องการ หรือ Google ถ้าไม่มี
+      window.location.href = originalUrl || 'https://www.google.com';
+    }, 2000) // รอ 2 วินาทีให้ user เห็น success screen ก่อน
+  }, [originalUrl])
 
-  return (
-    <form
-      ref={formRef}
-      method="POST"
-      action={`https://${fwIp}:${fwPort || 1000}${fwPath || '/fgtauth'}`}
-      style={{ display: 'none' }}
-    >
-      <input type="hidden" name="magic" value={magic || ''} />
-      <input type="hidden" name="username" value={username || ''} />
-      <input type="hidden" name="answer" value="1" />
-    </form>
-  )
+  return null
 }
 
 // ============================================================
@@ -290,13 +277,7 @@ export default function QRPortal() {
       {/* ── SUCCESS STATE ───────────────────────────────── */}
       {phase === 'success' && successData && (
         <>
-          <FortigateForm
-            magic={successData.magic}
-            fwIp={successData.fw_ip}
-            fwPort={successData.fw_port}
-            fwPath={successData.fw_path}
-            username={successData.username || successData.user_info?.pid}
-          />
+          <RedirectHandler originalUrl={successData.original_url} />
           <div className="portal-card success-card">
             <div className="success-icon-wrap">
               <div className="success-icon">
@@ -325,7 +306,7 @@ export default function QRPortal() {
               <div className="dot-pulse">
                 <span /><span /><span />
               </div>
-              <span>กำลังส่งข้อมูลไปยัง Firewall...</span>
+              <span>กำลังนำคุณเข้าสู่เว็บไซต์...</span>
             </div>
           </div>
         </>
