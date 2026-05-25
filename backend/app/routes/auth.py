@@ -286,6 +286,7 @@ async def get_qr_status(session_id: str, request: Request):
         response_data.update({
             "magic": session.get("magic", ""),
             "fw_ip": session.get("fw_ip", FORTIGATE_IP),
+            "auth_url": session.get("auth_url", ""),
             "fw_port": FORTIGATE_AUTH_PORT,
             "fw_path": FORTIGATE_AUTH_PATH,
             "username": session.get("username", ""),
