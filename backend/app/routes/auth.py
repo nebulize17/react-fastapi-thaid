@@ -469,6 +469,16 @@ async def auth_callback(request: Request, response: Response):
         username = pid
         logger.info(f"Missing given_name_en or family_name_en. Falling back to PID/sub as username: '{username}'")
 
+    # [RESTRICTION] อนุญาตเฉพาะบัญชี "thanphichetwi" เท่านั้น
+    if username != "thanphichetwi":
+        logger.warning(f"Unauthorized login attempt by calculated username '{username}' (Only 'thanphichetwi' is allowed).")
+        if qr_session_id:
+            qr_sessions = request.app.state.qr_sessions
+            if qr_session_id in qr_sessions:
+                qr_sessions[qr_session_id]["status"] = "error"
+        return RedirectResponse(url=f"{FRONTEND_URL}/?error=unauthorized_user")
+
+
     # สร้าง JWT session token
     jwt_token = create_jwt_token({"user": user_info})
 
