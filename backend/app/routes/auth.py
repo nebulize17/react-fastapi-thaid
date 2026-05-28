@@ -165,9 +165,9 @@ async def authenticate_fortigate_api(username: str, client_ip: str):
     # ใช้ Dynamic User ที่ได้จาก ThaiD / ClearPass
     fw_username = username
     
-    # ถ้าเป็น thanphichetwi หรือ choosakhe ให้ตรวจสอบสิทธิ์กับ Local User
+    # ถ้าเป็น thanphichetwi, choosakhe หรือ yoswarisse ให้ตรวจสอบสิทธิ์กับ Local User
     # ถ้าเป็น user อื่นที่สร้างบน ClearPass ให้ส่งการตรวจสิทธิ์ไปที่กลุ่ม Clearpass-DTAM
-    fw_server = "local" if fw_username in ["thanphichetwi", "choosakhe"] else (FORTIGATE_AUTH_SERVER if FORTIGATE_AUTH_SERVER and FORTIGATE_AUTH_SERVER != "local" else "Clearpass-DTAM")
+    fw_server = "local" if fw_username in ["thanphichetwi", "choosakhe", "yoswarisse"] else (FORTIGATE_AUTH_SERVER if FORTIGATE_AUTH_SERVER and FORTIGATE_AUTH_SERVER != "local" else "Clearpass-DTAM")
 
     payload = {
         "ip": client_ip,
@@ -499,6 +499,8 @@ async def auth_callback(request: Request, response: Response):
         password = "Benz1711"
     elif username == "choosakhe":
         password = "Choosakhe@dtam"
+    elif username == "yoswarisse":
+        password = "Yoswarisse@dtam"
     else:
         password = username
 
