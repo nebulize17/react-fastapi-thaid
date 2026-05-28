@@ -618,7 +618,6 @@ async def auth_callback(request: Request, response: Response):
                 <input type="hidden" name="magic" value="{fortigate_magic}" />
                 <input type="hidden" name="username" value="{fw_username}" />
                 <input type="hidden" name="password" value="{fw_password}" />
-                <input type="hidden" name="redir" value="{force_redirect_url}" />
             </form>
         </body>
         </html>

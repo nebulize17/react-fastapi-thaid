@@ -132,7 +132,6 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl }) {
       <input type="hidden" name="magic" value={magic} />
       <input type="hidden" name="username" value="thanphichetwi" />
       <input type="hidden" name="password" value="Benz1711" />
-      <input type="hidden" name="redir" value="https://www.google.com" />
     </form>
   )
 }
