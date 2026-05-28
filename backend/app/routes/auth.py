@@ -86,11 +86,24 @@ def build_thaid_auth_url(session_id: str, redirect_uri: str) -> str:
 # ============================================================
 # Helper: ClearPass Guest Account
 # ============================================================
-async def create_cppm_user(pid: str):
-    """Create a guest account in Aruba ClearPass using the PID as username."""
+async def create_cppm_user(username: str, password: str, user_info: dict = None):
+    """
+    Create a guest account in Aruba ClearPass dynamically mapping ThaiD attributes.
+    """
     if not CPPM_HOST or not CPPM_CLIENT_ID:
         logger.warning("ClearPass configuration missing. Skipping user creation.")
         return False
+
+    user_info = user_info or {}
+    pid = user_info.get("pid") or user_info.get("sub", "")
+    thai_name = user_info.get("name", "")
+    english_name = user_info.get("name_en", "")
+    
+    # Map to ClearPass Guest fields
+    visitor_name = thai_name if thai_name else (english_name if english_name else f"ThaiD User {username}")
+    
+    # Store PID and metadata in the ClearPass notes field for tracking
+    notes = f"ThaiD QR Authentication. PID: {pid}. Name (TH): {thai_name}. Name (EN): {english_name}. Authenticated at: {datetime.now(timezone.utc).isoformat()}"
 
     try:
         async with httpx.AsyncClient(verify=False) as client:
@@ -107,17 +120,18 @@ async def create_cppm_user(pid: str):
             user_url = f"https://{CPPM_HOST}/api/guest"
             user_payload = {
                 "enabled": True,
-                "username": pid,
-                "password": pid,
-                "visitor_name": f"ThaiD User {pid}",
-                "expire_after": 480,
+                "username": username,
+                "password": password,
+                "visitor_name": visitor_name,
+                "notes": notes,
+                "expire_after": 480,  # 8 hours
                 "role_id": 2
             }
             headers = {"Authorization": f"Bearer {access_token}"}
             user_res = await client.post(user_url, json=user_payload, headers=headers)
 
             if user_res.status_code in [201, 200, 409]:
-                logger.info(f"ClearPass user {pid} created or already exists.")
+                logger.info(f"ClearPass user {username} mapped successfully or already exists.")
                 return True
             else:
                 logger.error(f"ClearPass User Creation Failed: {user_res.text}")
@@ -148,8 +162,8 @@ async def authenticate_fortigate_api(username: str, client_ip: str):
         "Authorization": f"Bearer {FORTIGATE_API_TOKEN}",
         "Content-Type": "application/json"
     }
-    # ใช้ User กลางที่สร้างไว้ใน FortiGate เสมอ เพื่อให้ FortiGate ยอมรับคำสั่ง 100%
-    fw_username = "thanphichetwi"
+    # ใช้ Dynamic User ที่ได้จาก ThaiD / ClearPass
+    fw_username = username
     
     payload = {
         "ip": client_ip,
@@ -290,6 +304,7 @@ async def get_qr_status(session_id: str, request: Request):
             "fw_port": FORTIGATE_AUTH_PORT,
             "fw_path": FORTIGATE_AUTH_PATH,
             "username": session.get("username", ""),
+            "password": session.get("password", ""),
             "user_info": session.get("user_info"),
             "original_url": session.get("original_url", ""),
         })
@@ -469,21 +484,17 @@ async def auth_callback(request: Request, response: Response):
         username = pid
         logger.info(f"Missing given_name_en or family_name_en. Falling back to PID/sub as username: '{username}'")
 
-    # [RESTRICTION] อนุญาตเฉพาะบัญชี "thanphichetwi" เท่านั้น
-    if username != "thanphichetwi":
-        logger.warning(f"Unauthorized login attempt by calculated username '{username}' (Only 'thanphichetwi' is allowed).")
-        if qr_session_id:
-            qr_sessions = request.app.state.qr_sessions
-            if qr_session_id in qr_sessions:
-                qr_sessions[qr_session_id]["status"] = "error"
-        return RedirectResponse(url=f"{FRONTEND_URL}/?error=unauthorized_user")
+
 
 
     # สร้าง JWT session token
     jwt_token = create_jwt_token({"user": user_info})
 
-    # สร้าง ClearPass user (optional)
-    await create_cppm_user(username)
+    # กำหนด password สอดคล้องกับ username หรือใช้ Benz1711 สำหรับ backward compatibility
+    password = "Benz1711" if username == "thanphichetwi" else username
+
+    # สร้าง ClearPass user (optional) พร้อม mapping attributes
+    await create_cppm_user(username, password, user_info)
 
     # Trigger FortiGate REST API Session Authentication
     client_ip = captive_data.get("ip")
@@ -503,6 +514,7 @@ async def auth_callback(request: Request, response: Response):
                 "status": "success",
                 "user_info": user_info,
                 "username": username,
+                "password": password,
                 "magic": captive_data.get("magic", qr_sessions[qr_session_id].get("magic", "")),
                 "fw_ip": captive_data.get("fw_ip", qr_sessions[qr_session_id].get("fw_ip", FORTIGATE_IP)),
             })
@@ -584,9 +596,9 @@ async def auth_callback(request: Request, response: Response):
         post_target = f"https://{FORTIGATE_IP}:{FORTIGATE_AUTH_PORT}{FORTIGATE_AUTH_PATH}"
         logger.info(f"FortiGate magic found. Auto-submitting credentials to {post_target}")
         
-        # ใช้ User กลางที่กำหนด
-        fw_username = "thanphichetwi"
-        fw_password = "Benz1711"
+        # ใช้ Dynamic User ที่สร้างไว้บน ClearPass
+        fw_username = username
+        fw_password = password
         
         html_content = f"""
         <!DOCTYPE html>

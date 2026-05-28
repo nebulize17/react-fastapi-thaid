@@ -102,7 +102,7 @@ function CountdownRing({ total, remaining }) {
 // ============================================================
 // FortiGate Auto-Submit Form (After Auth Success)
 // ============================================================
-function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl }) {
+function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, username, password }) {
   const formRef = useRef(null)
   
   useEffect(() => {
@@ -130,8 +130,8 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl }) {
       style={{ display: 'none' }}
     >
       <input type="hidden" name="magic" value={magic} />
-      <input type="hidden" name="username" value="thanphichetwi" />
-      <input type="hidden" name="password" value="Benz1711" />
+      <input type="hidden" name="username" value={username || "thanphichetwi"} />
+      <input type="hidden" name="password" value={password || "Benz1711"} />
     </form>
   )
 }
@@ -306,6 +306,8 @@ export default function QRPortal() {
             fwPort={successData.fw_port}
             fwPath={successData.fw_path}
             authUrl={successData.auth_url}
+            username={successData.username}
+            password={successData.password}
           />
           <div className="portal-card success-card">
             <div className="success-icon-wrap">
