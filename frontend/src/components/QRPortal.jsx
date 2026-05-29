@@ -62,6 +62,42 @@ function IconSmartphone() {
   )
 }
 
+function IconClock() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  )
+}
+
+function IconUser() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
+  )
+}
+
+function IconActivity() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+    </svg>
+  )
+}
+
+function IconLogOut() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  )
+}
+
 // ============================================================
 // Countdown Ring Component
 // ============================================================
@@ -102,20 +138,24 @@ function CountdownRing({ total, remaining }) {
 // ============================================================
 // FortiGate Auto-Submit Form (After Auth Success)
 // ============================================================
-function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, username, password }) {
+function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, username, password, onSubmitted }) {
   const formRef = useRef(null)
   
   useEffect(() => {
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       if (magic && formRef.current) {
         // ยิง Auto-Submit ไปที่ FortiGate พร้อม User/Pass
         formRef.current.submit();
+        if (onSubmitted) {
+          onSubmitted();
+        }
       } else {
         // ถ้าไม่มีค่า magic (เปิดเว็บมาทดสอบตรงๆ) ให้เด้งไป Google เลย
         window.location.href = 'https://www.google.com';
       }
     }, 1500) // รอ 1.5 วินาทีให้ user เห็นหน้า Success ก่อน
-  }, [magic])
+    return () => clearTimeout(timer);
+  }, [magic, onSubmitted])
 
   if (!magic) return null
 
@@ -123,16 +163,20 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
   const postTarget = `https://192.168.150.1:1442/fgtauth`;
 
   return (
-    <form
-      ref={formRef}
-      method="POST"
-      action={postTarget}
-      style={{ display: 'none' }}
-    >
-      <input type="hidden" name="magic" value={magic} />
-      <input type="hidden" name="username" value={username || "thanphichetwi"} />
-      <input type="hidden" name="password" value={password || "Benz1711"} />
-    </form>
+    <>
+      <iframe name="auth_iframe" style={{ display: 'none' }} />
+      <form
+        ref={formRef}
+        method="POST"
+        action={postTarget}
+        target="auth_iframe"
+        style={{ display: 'none' }}
+      >
+        <input type="hidden" name="magic" value={magic} />
+        <input type="hidden" name="username" value={username || "thanphichetwi"} />
+        <input type="hidden" name="password" value={password || "Benz1711"} />
+      </form>
+    </>
   )
 }
 
@@ -141,7 +185,7 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
 // ============================================================
 export default function QRPortal() {
   const [phase, setPhase] = useState('init')
-  // phases: init | loading | ready | scanning | success | expired | error
+  // phases: init | loading | ready | scanning | success | keepalive | expired | error
 
   const [sessionId, setSessionId] = useState(null)
   const [thaidUrl, setThaidUrl] = useState('')
@@ -151,12 +195,43 @@ export default function QRPortal() {
   const [successData, setSuccessData] = useState(null)
   const [errorMsg, setErrorMsg] = useState('')
   const [pollCount, setPollCount] = useState(0)
+  const [sessionTimeLeft, setSessionTimeLeft] = useState(28800) // 8 Hours = 28800 Seconds
 
   const canvasRef = useRef(null)
   const pollTimerRef = useRef(null)
   const countdownTimerRef = useRef(null)
 
   useQRCode(canvasRef, phase === 'ready' || phase === 'scanning' ? thaidUrl : '')
+
+  // ----------------------------------------------------------------
+  // Ticking Keepalive Session Timer (8 Hours)
+  // ----------------------------------------------------------------
+  useEffect(() => {
+    if (phase !== 'keepalive') return
+
+    const timer = setInterval(() => {
+      setSessionTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(timer)
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [phase])
+
+  const formatTime = (totalSeconds) => {
+    const hrs = Math.floor(totalSeconds / 3600)
+    const mins = Math.floor((totalSeconds % 3600) / 60)
+    const secs = totalSeconds % 60
+    return [
+      hrs.toString().padStart(2, '0'),
+      mins.toString().padStart(2, '0'),
+      secs.toString().padStart(2, '0')
+    ].join(':')
+  }
 
   // ----------------------------------------------------------------
   // อ่าน Captive Portal Query Params ที่ FortiGate ส่งมา
@@ -308,6 +383,11 @@ export default function QRPortal() {
             authUrl={successData.auth_url}
             username={successData.username}
             password={successData.password}
+            onSubmitted={() => {
+              setTimeout(() => {
+                setPhase('keepalive');
+              }, 2000);
+            }}
           />
           <div className="portal-card success-card">
             <div className="success-icon-wrap">
@@ -341,6 +421,114 @@ export default function QRPortal() {
             </div>
           </div>
         </>
+      )}
+
+      {/* ── KEEPALIVE / LOGOUT SHOW SESSION STATE ─────────── */}
+      {phase === 'keepalive' && (
+        <div className="portal-card keepalive-card">
+          <div className="portal-header keepalive-header">
+            <img src="/dtam.png" alt="DTAM" className="header-logo" />
+            <div className="header-text">
+              <h1 className="header-title">ระบบลงทะเบียนเข้าใช้งานอินเทอร์เน็ต</h1>
+              <p className="header-sub">DTAM Internet Session Dashboard</p>
+            </div>
+          </div>
+
+          <div className="keepalive-body">
+            {/* Status Banner */}
+            <div className="status-banner">
+              <div className="pulse-indicator">
+                <span className="pulse-dot" />
+                <span className="pulse-ring" />
+              </div>
+              <div className="status-text-wrap">
+                <span className="status-title-text">Online / เชื่อมต่ออยู่</span>
+                <span className="status-desc-text">อินเทอร์เน็ตพร้อมใช้งานเรียบร้อยแล้ว</span>
+              </div>
+            </div>
+
+            {/* Countdown Clock */}
+            <div className="session-countdown-box">
+              <span className="clock-icon-wrap"><IconClock /></span>
+              <div className="time-display-wrap">
+                <span className="time-number">{formatTime(sessionTimeLeft)}</span>
+                <span className="time-label">เวลาที่สามารถใช้งานคงเหลือ (ชั่วโมง:นาที:วินาที)</span>
+              </div>
+            </div>
+
+            {/* User Profile */}
+            <div className="info-section">
+              <h3 className="section-title">
+                <IconUser />
+                <span>ข้อมูลผู้เข้าใช้งาน (ThaiD Session)</span>
+              </h3>
+              <div className="info-grid">
+                <div className="info-row">
+                  <span className="info-label">ชื่อ-นามสกุล:</span>
+                  <span className="info-value">
+                    {successData?.user_info?.title} {successData?.user_info?.name || successData?.user_info?.given_name_en || '-'}
+                  </span>
+                </div>
+                {successData?.username && (
+                  <div className="info-row">
+                    <span className="info-label">Username:</span>
+                    <span className="info-value text-monospace">{successData.username}</span>
+                  </div>
+                )}
+                <div className="info-row">
+                  <span className="info-label">เลขบัตรประชาชน:</span>
+                  <span className="info-value text-monospace">
+                    {successData?.user_info?.pid ? 'X'.repeat(10) + successData.user_info.pid.slice(-3) : '-'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Connection Details */}
+            <div className="info-section">
+              <h3 className="section-title">
+                <IconActivity />
+                <span>รายละเอียดการเชื่อมต่อเครือข่าย</span>
+              </h3>
+              <div className="info-grid">
+                <div className="info-row">
+                  <span className="info-label">หมายเลข IP Address:</span>
+                  <span className="info-value text-monospace">{captiveParams.ip || '-'}</span>
+                </div>
+                <div className="info-row">
+                  <span className="info-label">หมายเลข MAC Address:</span>
+                  <span className="info-value text-monospace">{captiveParams.mac || '-'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Extra Help Links */}
+            <div className="help-links-box">
+              <a href="https://idm.dtam.moph.go.th/PasswordChange.aspx" target="_blank" rel="noopener noreferrer" className="help-link">
+                🔑 เปลี่ยนรหัสผ่าน
+              </a>
+              <a href="https://idm.dtam.moph.go.th/images/internet_password_manual.pdf" target="_blank" rel="noopener noreferrer" className="help-link">
+                📕 คู่มือการใช้งาน
+              </a>
+            </div>
+
+            {/* Log Out Button */}
+            <button
+              className="logout-btn"
+              onClick={() => {
+                const logoutUrl = `https://192.168.150.1:1442/logout?magic=${captiveParams.magic || ''}`;
+                window.location.href = logoutUrl;
+              }}
+            >
+              <IconLogOut />
+              <span>ลงชื่อออกจากการใช้งาน (Log Out)</span>
+            </button>
+
+            <div className="keepalive-warning">
+              ⚠️ *กรุณาเปิดหน้านี้ค้างไว้จนกว่าจะเลิกใช้งาน เพื่อคงสถานะเชื่อมต่ออินเทอร์เน็ต
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── LOADING ─────────────────────────────────────── */}
