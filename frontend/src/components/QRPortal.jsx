@@ -167,7 +167,6 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
       ref={formRef}
       method="POST"
       action={postTarget}
-      target="auth_iframe"
       style={{ display: 'none' }}
     >
       <input type="hidden" name="magic" value={magic} />
@@ -180,8 +179,8 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
 // ============================================================
 // MAIN COMPONENT: QRPortal
 // ============================================================
-export default function QRPortal() {
-  const [phase, setPhase] = useState('init')
+export default function QRPortal({ keepaliveOnly }) {
+  const [phase, setPhase] = useState(keepaliveOnly ? 'keepalive' : 'init')
   // phases: init | loading | ready | scanning | success | keepalive | expired | error
 
   const [sessionId, setSessionId] = useState(null)
@@ -199,6 +198,22 @@ export default function QRPortal() {
   const countdownTimerRef = useRef(null)
 
   useQRCode(canvasRef, phase === 'ready' || phase === 'scanning' ? thaidUrl : '')
+
+  // ----------------------------------------------------------------
+  // โหลดค่าตอนเปิดหน้า Keepalive ตรงๆ
+  // ----------------------------------------------------------------
+  useEffect(() => {
+    if (keepaliveOnly) {
+      const storedParams = localStorage.getItem('captive_params')
+      const storedSuccess = localStorage.getItem('thaid_success_data')
+      if (storedParams) {
+        setCaptiveParams(JSON.parse(storedParams))
+      }
+      if (storedSuccess) {
+        setSuccessData(JSON.parse(storedSuccess))
+      }
+    }
+  }, [keepaliveOnly])
 
   // ----------------------------------------------------------------
   // Ticking Keepalive Session Timer (8 Hours)
@@ -234,15 +249,23 @@ export default function QRPortal() {
   // อ่าน Captive Portal Query Params ที่ FortiGate ส่งมา
   // ----------------------------------------------------------------
   useEffect(() => {
+    if (keepaliveOnly) return
+
     const params = new URLSearchParams(window.location.search)
-    setCaptiveParams({
+    const newParams = {
       mac: params.get('mac') || params.get('client_mac') || '',
       ip: params.get('ip') || params.get('client_ip') || '',
       url: params.get('url') || params.get('redirect_url') || '',
       magic: params.get('magic') || '',
       fw_ip: params.get('fw_ip') || '192.168.254.253',
       type: params.get('type') || '',
-    })
+    }
+    setCaptiveParams(newParams)
+
+    // บันทึกลง localStorage ทันทีที่มีค่าเพื่อรอใช้ที่หน้า Keepalive
+    if (newParams.magic) {
+      localStorage.setItem('captive_params', JSON.stringify(newParams))
+    }
 
     // เช็ค error จาก URL
     const error = params.get('error')
@@ -250,7 +273,7 @@ export default function QRPortal() {
       setErrorMsg('เกิดข้อผิดพลาดในการยืนยันตัวตน กรุณาลองใหม่')
       setPhase('error')
     }
-  }, [])
+  }, [keepaliveOnly])
 
   // ----------------------------------------------------------------
   // สร้าง QR Session
@@ -281,15 +304,17 @@ export default function QRPortal() {
 
   // เรียกสร้าง QR Session เมื่อ captiveParams พร้อม
   useEffect(() => {
+    if (keepaliveOnly) return
     if (Object.keys(captiveParams).length > 0 && phase === 'init') {
       createQrSession()
     }
-  }, [captiveParams, phase, createQrSession])
+  }, [captiveParams, phase, createQrSession, keepaliveOnly])
 
   // ----------------------------------------------------------------
   // Countdown Timer
   // ----------------------------------------------------------------
   useEffect(() => {
+    if (keepaliveOnly) return
     if (phase !== 'ready' && phase !== 'scanning') return
 
     countdownTimerRef.current = setInterval(() => {
@@ -304,12 +329,13 @@ export default function QRPortal() {
     }, 1000)
 
     return () => clearInterval(countdownTimerRef.current)
-  }, [phase])
+  }, [phase, keepaliveOnly])
 
   // ----------------------------------------------------------------
   // Polling: เช็คสถานะ QR Session
   // ----------------------------------------------------------------
   useEffect(() => {
+    if (keepaliveOnly) return
     if ((phase !== 'ready' && phase !== 'scanning') || !sessionId) return
 
     const poll = async () => {
@@ -326,6 +352,7 @@ export default function QRPortal() {
           clearInterval(pollTimerRef.current)
           clearInterval(countdownTimerRef.current)
           setSuccessData(data)
+          localStorage.setItem('thaid_success_data', JSON.stringify(data))
           setPhase('success')
         } else if (data.status === 'expired') {
           clearInterval(pollTimerRef.current)
@@ -346,7 +373,7 @@ export default function QRPortal() {
     pollTimerRef.current = setInterval(poll, 3000) // ทุก 3 วินาที
 
     return () => clearInterval(pollTimerRef.current)
-  }, [phase, sessionId])
+  }, [phase, sessionId, keepaliveOnly])
 
   // ----------------------------------------------------------------
   // ปุ่ม Refresh QR
@@ -380,11 +407,6 @@ export default function QRPortal() {
             authUrl={successData.auth_url}
             username={successData.username}
             password={successData.password}
-            onSubmitted={() => {
-              setTimeout(() => {
-                setPhase('keepalive');
-              }, 2000);
-            }}
           />
           <div className="portal-card success-card">
             <div className="success-icon-wrap">
@@ -656,14 +678,6 @@ export default function QRPortal() {
           <p className="loading-text">กำลังเชื่อมต่อระบบ...</p>
         </div>
       )}
-
-      {/* ── Static Background Auth Iframe to prevent top navigation race conditions ── */}
-      <iframe
-        name="auth_iframe"
-        id="auth_iframe"
-        sandbox="allow-forms allow-scripts allow-same-origin"
-        style={{ display: 'none' }}
-      />
     </div>
   )
 }

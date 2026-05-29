@@ -15,16 +15,18 @@ function App() {
   }, [])
 
   // ── Routing ──────────────────────────────────────────────
-  // /             → QRPortal (Captive Portal หน้าหลัก — FortiGate redirect มาที่นี่)
-  // /login        → Login (fallback สำหรับ redirect-based login)
+  // /             → Login/QRPortal (Captive Portal หน้าหลัก — FortiGate redirect มาที่นี่)
+  // /qr           → QRPortal (แสกน QR)
+  // /keepalive    → QRPortal (หน้า Keepalive Dashboard หลังต่อติดแล้ว)
   // /dashboard    → Dashboard (แสดงข้อมูลผู้ใช้หลัง auth)
   let content
   if (currentPath === '/dashboard') {
     content = <Dashboard />
   } else if (currentPath === '/qr') {
     content = <QRPortal />
+  } else if (currentPath === '/keepalive') {
+    content = <QRPortal keepaliveOnly={true} />
   } else {
-    // หน้าหลัก: Captive Portal (ปุ่มล็อกอินเปลี่ยนเส้นทางไป BORA)
     content = <Login />
   }
 
