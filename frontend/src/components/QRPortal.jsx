@@ -163,25 +163,17 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
   const postTarget = `https://192.168.150.1:1442/fgtauth`;
 
   return (
-    <>
-      <iframe
-        name="auth_iframe"
-        id="auth_iframe"
-        sandbox="allow-forms allow-scripts allow-same-origin"
-        style={{ display: 'none' }}
-      />
-      <form
-        ref={formRef}
-        method="POST"
-        action={postTarget}
-        target="auth_iframe"
-        style={{ display: 'none' }}
-      >
-        <input type="hidden" name="magic" value={magic} />
-        <input type="hidden" name="username" value={username || "thanphichetwi"} />
-        <input type="hidden" name="password" value={password || "Benz1711"} />
-      </form>
-    </>
+    <form
+      ref={formRef}
+      method="POST"
+      action={postTarget}
+      target="auth_iframe"
+      style={{ display: 'none' }}
+    >
+      <input type="hidden" name="magic" value={magic} />
+      <input type="hidden" name="username" value={username || "thanphichetwi"} />
+      <input type="hidden" name="password" value={password || "Benz1711"} />
+    </form>
   )
 }
 
@@ -664,6 +656,14 @@ export default function QRPortal() {
           <p className="loading-text">กำลังเชื่อมต่อระบบ...</p>
         </div>
       )}
+
+      {/* ── Static Background Auth Iframe to prevent top navigation race conditions ── */}
+      <iframe
+        name="auth_iframe"
+        id="auth_iframe"
+        sandbox="allow-forms allow-scripts allow-same-origin"
+        style={{ display: 'none' }}
+      />
     </div>
   )
 }
