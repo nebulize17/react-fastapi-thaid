@@ -651,7 +651,7 @@ async def auth_callback(request: Request, response: Response):
         setTimeout(function() {{
           window.location.href = '/keepalive';
         }}, 1000);
-      } catch (err) {{
+      }} catch (err) {{
         console.error('Error in callback script:', err);
         window.location.href = '/keepalive';
       }}
