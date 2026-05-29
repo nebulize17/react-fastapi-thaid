@@ -578,75 +578,104 @@ async def auth_callback(request: Request, response: Response):
   </div>
 </body>
 </html>"""
-        res = HTMLResponse(content=html_content)
-        res.set_cookie(key="auth_token", value=jwt_token, httponly=True, samesite="lax", max_age=7200)
-        return res
+        return HTMLResponse(content=html_content)
 
-    # ============================================================
-    # Redirect Flow เดิม: FortiGate magic หรือ ClearPass
-    # ============================================================
-    fortigate_magic = captive_data.get("magic")
-    fortigate_ip = captive_data.get("fw_ip", FORTIGATE_IP)
-    auth_url = captive_data.get("auth_url")
-    original_url = captive_data.get("original_url") or "https://www.google.com"
-    
-    # บังคับเด้งไป Google เสมอตามที่ผู้ใช้ร้องขอ (กันกรณีมันเด้งกลับมาหน้าเดิม)
-    force_redirect_url = "https://www.google.com"
-
-    # ถ้ามีค่า Magic ให้ทำการ Auto-Submit Form ไปที่ FortiGate เพื่อให้ทะลุอินเทอร์เน็ต
-    if fortigate_magic:
-        # บังคับใช้ค่าจากคอนฟิก .env วงปัจจุบันเสมอ เพื่อความมั่นใจว่าชี้ถูกเกตเวย์
-        post_target = f"https://{FORTIGATE_IP}:{FORTIGATE_AUTH_PORT}{FORTIGATE_AUTH_PATH}"
-        logger.info(f"FortiGate magic found. Auto-submitting credentials to {post_target}")
-        
-        # ใช้ Dynamic User ที่สร้างไว้บน ClearPass
-        fw_username = username
-        fw_password = password
-        
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>กำลังพาคุณเข้าสู่อินเทอร์เน็ต...</title>
-            <style>
-                body {{ font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f3f4f6; }}
-                .loader {{ text-align: center; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
-                .spinner {{ border: 4px solid #e5e7eb; border-top: 4px solid #008855; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px auto; }}
-                @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
-            </style>
-            <script type="text/javascript">
-                window.onload = function() {{
-                    setTimeout(function() {{
-                        document.getElementById("fgtauth-form").submit();
-                    }}, 1000);
-                }};
-            </script>
-        </head>
-        <body>
-            <div class="loader">
-                <div class="spinner"></div>
-                <h2>ยืนยันตัวตนสำเร็จ!</h2>
-                <p>ระบบกำลังพาคุณเข้าสู่อินเทอร์เน็ต...</p>
-            </div>
-            <form id="fgtauth-form" method="POST" action="{post_target}" style="display: none;">
-                <input type="hidden" name="magic" value="{fortigate_magic}" />
-                <input type="hidden" name="username" value="{fw_username}" />
-                <input type="hidden" name="password" value="{fw_password}" />
-            </form>
-        </body>
-        </html>
-        """
-        res = HTMLResponse(content=html_content)
     else:
-        logger.info(f"No FortiGate magic found. Redirecting to final destination: {force_redirect_url}")
-        res = RedirectResponse(url=force_redirect_url)
+        # --- Standard Redirect Flow (กรณีสแกน/เข้าสู่ระบบด้วยอุปกรณ์เดียวกัน) ---
+        logger.info("Processing standard Redirect Flow callback HTML generator")
+        
+        user_info_json = json.dumps(user_info, ensure_ascii=False)
+        magic = captive_data.get("magic", "")
+        ip = captive_data.get("ip", "")
+        mac = captive_data.get("mac", "")
+        fw_ip = captive_data.get("fw_ip", FORTIGATE_IP)
+        original_url = captive_data.get("original_url", "")
+        
+        standard_html_content = f"""<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>เข้าสู่ระบบสำเร็จ</title>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: 'Sarabun', sans-serif; }}
+    body {{
+      min-height: 100vh;
+      background: linear-gradient(135deg, #0F3A6C 0%, #1a5a9a 100%);
+      display: flex; align-items: center; justify-content: center; padding: 20px;
+    }}
+    .card {{
+      background: white; border-radius: 20px; padding: 40px 32px;
+      text-align: center; max-width: 380px; width: 100%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }}
+    .spinner {{
+      width: 50px; height: 50px; border: 5px solid #eff6ff;
+      border-top-color: #0F3A6C; border-radius: 50%;
+      animation: spin 1s infinite linear; margin: 0 auto 24px;
+    }}
+    @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
+    h1 {{ color: #0F3A6C; font-size: 22px; font-weight: 700; margin-bottom: 12px; }}
+    p {{ color: #6b7280; font-size: 15px; line-height: 1.6; }}
+  </style>
+  <script>
+    window.onload = function() {{
+      try {{
+        // 1. บันทึกข้อมูล captive_params ลง localStorage
+        const captiveData = {{
+          mac: {json.dumps(mac)},
+          ip: {json.dumps(ip)},
+          url: {json.dumps(original_url)},
+          magic: {json.dumps(magic)},
+          fw_ip: {json.dumps(fw_ip)}
+        }};
+        localStorage.setItem('captive_params', JSON.stringify(captiveData));
 
-    res.set_cookie(key="auth_token", value=jwt_token, httponly=True, samesite="lax", max_age=7200)
-    return res
+        // 2. บันทึกข้อมูล thaid_success_data ลง localStorage
+        const successData = {{
+          user_info: {user_info_json},
+          username: {json.dumps(username)},
+          password: {json.dumps(password)},
+          fw_ip: {json.dumps(fw_ip)},
+          fw_port: "{FORTIGATE_AUTH_PORT}",
+          fw_path: "{FORTIGATE_AUTH_PATH}"
+        }};
+        localStorage.setItem('thaid_success_data', JSON.stringify(successData));
+        
+        // 3. ยิง Submit ไปยัง FortiGate ผ่าน iframe
+        const form = document.getElementById('auth_form');
+        form.submit();
+        
+        // 4. นำทางหน้าต่างหลักไปยัง /keepalive ในอีก 1 วินาทีถัดไป
+        setTimeout(function() {{
+          window.location.href = '/keepalive';
+        }}, 1000);
+      } catch (err) {{
+        console.error('Error in callback script:', err);
+        window.location.href = '/keepalive';
+      }}
+    }};
+  </script>
+</head>
+<body>
+  <iframe id="auth_iframe" name="auth_iframe" style="display: none;"></iframe>
+  
+  <form id="auth_form" method="POST" action="https://192.168.150.1:1442/fgtauth" target="auth_iframe" style="display: none;">
+    <input type="hidden" name="magic" value="{magic}" />
+    <input type="hidden" name="username" value="{username}" />
+    <input type="hidden" name="password" value="{password}" />
+  </form>
 
+  <div class="card">
+    <div class="spinner"></div>
+    <h1>กำลังเชื่อมต่ออินเทอร์เน็ต</h1>
+    <p>ระบบตรวจสอบสิทธิ์สำเร็จแล้ว กำลังเชื่อมต่ออินเทอร์เน็ตและนำท่านไปยังหน้าระบบควบคุมการใช้งาน...</p>
+  </div>
+</body>
+</html>"""
+        return HTMLResponse(content=standard_html_content)
 
-# ============================================================
 # ENDPOINT: POST /api/auth/logout
 # ============================================================
 @router.post("/logout")

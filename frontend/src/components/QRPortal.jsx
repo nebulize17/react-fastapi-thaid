@@ -147,7 +147,8 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
         // ยิง Auto-Submit ไปที่ FortiGate พร้อม User/Pass
         formRef.current.submit();
         if (onSubmitted) {
-          onSubmitted();
+          // หน่วงเวลาเล็กน้อยเพื่อให้ฟอร์ม submit สำเร็จก่อนเปลี่ยนหน้า
+          setTimeout(onSubmitted, 1000);
         }
       } else {
         // ถ้าไม่มีค่า magic (เปิดเว็บมาทดสอบตรงๆ) ให้เด้งไป Google เลย
@@ -163,16 +164,20 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
   const postTarget = `https://192.168.150.1:1442/fgtauth`;
 
   return (
-    <form
-      ref={formRef}
-      method="POST"
-      action={postTarget}
-      style={{ display: 'none' }}
-    >
-      <input type="hidden" name="magic" value={magic} />
-      <input type="hidden" name="username" value={username || "thanphichetwi"} />
-      <input type="hidden" name="password" value={password || "Benz1711"} />
-    </form>
+    <>
+      <iframe name="auth_iframe" id="auth_iframe" style={{ display: 'none' }} />
+      <form
+        ref={formRef}
+        method="POST"
+        action={postTarget}
+        target="auth_iframe"
+        style={{ display: 'none' }}
+      >
+        <input type="hidden" name="magic" value={magic} />
+        <input type="hidden" name="username" value={username || "thanphichetwi"} />
+        <input type="hidden" name="password" value={password || "Benz1711"} />
+      </form>
+    </>
   )
 }
 
@@ -407,6 +412,7 @@ export default function QRPortal({ keepaliveOnly }) {
             authUrl={successData.auth_url}
             username={successData.username}
             password={successData.password}
+            onSubmitted={() => setPhase('keepalive')}
           />
           <div className="portal-card success-card">
             <div className="success-icon-wrap">
