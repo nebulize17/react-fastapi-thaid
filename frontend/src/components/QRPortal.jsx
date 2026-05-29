@@ -426,7 +426,7 @@ export default function QRPortal({ keepaliveOnly }) {
             {successData.user_info && (
               <div className="user-badge">
                 <span className="user-name">
-                  {successData.user_info.title} {successData.user_info.name || successData.user_info.given_name_en}
+                  {successData.user_info.name || successData.user_info.given_name_en}
                 </span>
                 {successData.username && (
                   <span className="user-username" style={{ display: 'block', fontSize: '14px', color: '#64748b', marginTop: '4px' }}>
@@ -491,7 +491,7 @@ export default function QRPortal({ keepaliveOnly }) {
                 <div className="info-row">
                   <span className="info-label">ชื่อ-นามสกุล:</span>
                   <span className="info-value">
-                    {successData?.user_info?.title} {successData?.user_info?.name || successData?.user_info?.given_name_en || '-'}
+                    {successData?.user_info?.name || successData?.user_info?.given_name_en || '-'}
                   </span>
                 </div>
                 {successData?.username && (
@@ -509,40 +509,12 @@ export default function QRPortal({ keepaliveOnly }) {
               </div>
             </div>
 
-            {/* Connection Details */}
-            <div className="info-section">
-              <h3 className="section-title">
-                <IconActivity />
-                <span>รายละเอียดการเชื่อมต่อเครือข่าย</span>
-              </h3>
-              <div className="info-grid">
-                <div className="info-row">
-                  <span className="info-label">หมายเลข IP Address:</span>
-                  <span className="info-value text-monospace">{captiveParams.ip || '-'}</span>
-                </div>
-                <div className="info-row">
-                  <span className="info-label">หมายเลข MAC Address:</span>
-                  <span className="info-value text-monospace">{captiveParams.mac || '-'}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Extra Help Links */}
-            <div className="help-links-box">
-              <a href="https://idm.dtam.moph.go.th/PasswordChange.aspx" target="_blank" rel="noopener noreferrer" className="help-link">
-                🔑 เปลี่ยนรหัสผ่าน
-              </a>
-              <a href="https://idm.dtam.moph.go.th/images/internet_password_manual.pdf" target="_blank" rel="noopener noreferrer" className="help-link">
-                📕 คู่มือการใช้งาน
-              </a>
-            </div>
-
             {/* Log Out Button */}
             <button
               className="logout-btn"
               onClick={() => {
-                const logoutUrl = `https://192.168.150.1:1442/logout?magic=${captiveParams.magic || ''}`;
-                window.location.href = logoutUrl;
+                const magic = captiveParams.magic || '';
+                window.location.href = `/logout?magic=${magic}`;
               }}
             >
               <IconLogOut />
