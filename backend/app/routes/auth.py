@@ -239,7 +239,15 @@ async def create_qr_session(
 
     # State payload ที่จะส่งไปกับ ThaiD OAuth และจะกลับมาใน callback
     # บันทึก session — เก็บ captive portal params ทั้งหมดไว้ใน store
-    client_ip = ip or (request.client.host if request.client else "")
+    # Extract client real IP (essential when behind Nginx in Docker)
+    client_ip = ip
+    if not client_ip:
+        x_forwarded_for = request.headers.get("x-forwarded-for")
+        if x_forwarded_for:
+            client_ip = x_forwarded_for.split(",")[0].strip()
+        else:
+            client_ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
+
     qr_sessions[session_id] = {
         "status": "pending",
         "mac": mac or "",
@@ -332,8 +340,17 @@ async def login(
 ):
     """Initiate the ThaID OAuth2 Login Flow. Supports Captive Portal parameters and QR session."""
     # เก็บ captive portal params ใน HTTP session
+    # Extract client real IP (essential when behind Nginx in Docker)
+    real_ip = ip
+    if not real_ip:
+        x_forwarded_for = request.headers.get("x-forwarded-for")
+        if x_forwarded_for:
+            real_ip = x_forwarded_for.split(",")[0].strip()
+        else:
+            real_ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
+
     if mac: request.session['guest_mac'] = mac
-    if ip: request.session['guest_ip'] = ip
+    request.session['guest_ip'] = real_ip
     if url: request.session['original_url'] = url
     if magic: request.session['fortigate_magic'] = magic
     if fw_ip: request.session['fortigate_ip'] = fw_ip
