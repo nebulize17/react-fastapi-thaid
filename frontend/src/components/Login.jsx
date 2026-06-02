@@ -51,15 +51,23 @@ export default function Login() {
           {error && (
             <div style={{
               marginBottom: '24px',
-              padding: '12px 16px',
-              background: 'var(--danger-bg)',
-              borderLeft: '4px solid var(--danger)',
-              color: 'var(--danger)',
-              fontSize: '13px',
+              padding: '14px 18px',
+              background: '#fef2f2',
+              borderLeft: '5px solid #ef4444',
+              color: '#991b1b',
+              fontSize: '14px',
+              lineHeight: '1.5',
               textAlign: 'left',
-              borderRadius: '4px'
+              borderRadius: '8px'
             }}>
-              ระบบไม่สามารถตรวจสอบตัวตนได้ กรุณาลองใหม่อีกครั้ง
+              {error === 'user_not_pre_created' ? (
+                <>
+                  <strong>⚠️ ไม่พบการลงทะเบียนเกสท์ในระบบ:</strong><br />
+                  ไม่พบชื่อบัญชีของคุณในระบบฐานข้อมูลผู้เข้าใช้งานชั่วคราว กรุณาติดต่อเจ้าหน้าที่/ประชาสัมพันธ์เพื่อขอลงทะเบียนเปิดบัญชีก่อนทำการสแกนยืนยันตัวตนอีกครั้ง
+                </>
+              ) : (
+                '❌ ระบบไม่สามารถตรวจสอบตัวตนได้ กรุณาลองใหม่อีกครั้ง'
+              )}
             </div>
           )}
 

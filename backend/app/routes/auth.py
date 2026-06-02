@@ -510,10 +510,10 @@ async def auth_callback(request: Request, response: Response):
     # สร้าง JWT session token
     jwt_token = create_jwt_token({"user": user_info})
 
-    # กำหนด password เริ่มต้นให้ตรงกับ username
+    # กำหนด password เริ่มต้น
     password = username
 
-    # ดึงค่ารหัสผ่านจริงจาก ClearPass Guest Database หากมีผู้ใช้นี้อยู่แล้ว เพื่อแก้ปัญหารหัสผ่านไม่ตรงกัน (409 Conflict)
+    # ตรวจสอบว่ามีบัญชีนี้อยู่ใน ClearPass Guest Database แล้วหรือไม่ (ห้ามสร้างออโต้ตามความต้องการผู้ใช้งาน)
     if CPPM_HOST and CPPM_CLIENT_ID:
         try:
             async with httpx.AsyncClient(verify=False) as client:
@@ -524,29 +524,33 @@ async def auth_callback(request: Request, response: Response):
                     "client_secret": CPPM_CLIENT_SECRET
                 }
                 token_res = await client.post(token_url, data=token_data, timeout=10)
-                if token_res.status_code == 200:
-                    access_token = token_res.json().get("access_token")
-                    
-                    # เช็คข้อมูลผู้เข้าใช้ในฐานข้อมูลเกสท์ของ ClearPass
-                    user_url = f"https://{CPPM_HOST}/api/guest/username/{username}"
-                    headers = {"Authorization": f"Bearer {access_token}"}
-                    user_res = await client.get(user_url, headers=headers, timeout=10)
-                    
-                    if user_res.status_code == 200:
-                        user_data = user_res.json()
-                        db_password = user_data.get("password") or user_data.get("cleartext_password")
-                        if db_password:
-                            password = db_password
-                            logger.info(f"Found existing ClearPass user '{username}'. Successfully pulled stored password from ClearPass Guest Database for login.")
-                    else:
-                        # หากยังไม่มีบัญชีเกสท์นี้ในระบบ ให้ทำการสร้างใหม่
-                        logger.info(f"User '{username}' not found in ClearPass. Creating new guest account.")
-                        await create_cppm_user(username, password, user_info)
+                if token_res.status_code != 200:
+                    logger.error("Failed to get ClearPass access token.")
+                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_connection_failed")
+
+                access_token = token_res.json().get("access_token")
+                
+                # เช็คข้อมูลผู้เข้าใช้ในฐานข้อมูลเกสท์ของ ClearPass
+                user_url = f"https://{CPPM_HOST}/api/guest/username/{username}"
+                headers = {"Authorization": f"Bearer {access_token}"}
+                user_res = await client.get(user_url, headers=headers, timeout=10)
+                
+                if user_res.status_code == 200:
+                    user_data = user_res.json()
+                    db_password = user_data.get("password") or user_data.get("cleartext_password")
+                    if db_password:
+                        password = db_password
+                        logger.info(f"Found existing pre-created ClearPass user '{username}'. Successfully pulled stored password from ClearPass Guest Database.")
+                else:
+                    # ปฏิเสธการล็อกอิน! เนื่องจากไม่มีบัญชีนี้อยู่ในระบบเกสท์ (ห้ามสร้างอัตโนมัติ)
+                    logger.warning(f"Access Denied: User '{username}' was NOT pre-created by administrator in ClearPass Guest Database.")
+                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=user_not_pre_created")
         except Exception as e:
             logger.error(f"Error querying existing ClearPass user in auth_callback: {str(e)}")
-            await create_cppm_user(username, password, user_info)
+            return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_query_error")
     else:
-        await create_cppm_user(username, password, user_info)
+        logger.error("ClearPass settings missing on server.")
+        return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_config_missing")
 
     # Trigger FortiGate REST API Session Authentication
     client_ip = captive_data.get("ip")
