@@ -57,7 +57,7 @@ export default function CreateGuest() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [companyName, setCompanyName] = useState('DTAM Employee')
-  const [expireAfter, setExpireAfter] = useState(43200) // 30 Days = 43200 minutes default for Employees
+  const [expireAfter, setExpireAfter] = useState(525600) // Default 12 months = 525600 minutes
   const [notes, setNotes] = useState('ลงทะเบียนบัญชีบุคลากร / พนักงาน (Employee)')
   const [termsAccepted, setTermsAccepted] = useState(true)
   
@@ -152,7 +152,7 @@ export default function CreateGuest() {
 
   const handleCopy = () => {
     if (!ticketData) return
-    const textToCopy = `=== คูปองอินเทอร์เน็ต (DTAM Internet Employee) ===\nชื่อผู้ใช้งาน (Username): ${ticketData.username}\nรหัสผ่าน (Password): ${ticketData.password}\nชื่อผู้ใช้บริการ: ${ticketData.visitorName}\nหน่วยงาน: ${ticketData.companyName}\nเวลาหมดอายุ: ${getExpireLabel(ticketData.expireAfter)}\nวันที่สร้าง: ${ticketData.createdDate}\n=====================================`
+    const textToCopy = `=== คูปองอินเทอร์เน็ต (DTAM Internet Employee) ===\nชื่อผู้ใช้งาน (Username): ${ticketData.username}\nรหัสผ่าน (Password): ${ticketData.password}\nชื่อผู้ใช้บริการ: ${ticketData.visitorName}\nหน่วยงาน: ${ticketData.companyName}\nวันที่ลงทะเบียน: ${ticketData.createdDate}\n=====================================`
     navigator.clipboard.writeText(textToCopy)
       .then(() => alert('คัดลอกข้อมูลรหัสผ่านไปยัง Clipboard สำเร็จ!'))
       .catch(err => console.error('Could not copy text: ', err))
@@ -160,7 +160,6 @@ export default function CreateGuest() {
 
   const handlePrint = () => {
     const printWindow = window.open('', '_blank', 'width=400,height=600')
-    const expireLabel = getExpireLabel(ticketData.expireAfter)
     
     printWindow.document.write(`
       <html>
@@ -242,8 +241,7 @@ export default function CreateGuest() {
           </div>
 
           <div style="font-size: 12px; margin: 10px 0; text-align: left;">
-            <div>🕒 <strong>อายุการใช้งาน:</strong> ${expireLabel}</div>
-            <div style="margin-top: 4px;">📅 <strong>วันที่สร้าง:</strong> ${ticketData.createdDate}</div>
+            <div style="margin-top: 4px;">📅 <strong>วันที่ลงทะเบียน:</strong> ${ticketData.createdDate}</div>
           </div>
 
           <div class="footer">
@@ -581,37 +579,6 @@ export default function CreateGuest() {
                     🔄 สุ่มรหัสผ่านใหม่ (Random 6 Digits)
                   </button>
 
-                  {/* Expire / TTL Selection */}
-                  <div className="input-group">
-                    <label style={{ display: 'block', fontSize: '13.5px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>
-                      ระยะเวลาหมดอายุสิทธิ์การใช้งาน (Account Expiration)
-                    </label>
-                    <select
-                      value={expireAfter}
-                      onChange={(e) => setExpireAfter(parseInt(e.target.value))}
-                      style={{
-                        width: '100%',
-                        padding: '12px 16px',
-                        borderRadius: '12px',
-                        border: '1.5px solid #cbd5e1',
-                        fontSize: '14.5px',
-                        background: 'white',
-                        outline: 'none',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <option value={43200}>30 วัน (30 Days) - แนะนำสำหรับบุคลากร</option>
-                      <option value={129600}>3 เดือน (3 Months)</option>
-                      <option value={259200}>6 เดือน (6 Months)</option>
-                      <option value={388800}>9 เดือน (9 Months)</option>
-                      <option value={525600}>12 เดือน (12 Months)</option>
-                      <option value={10080}>7 วัน (7 Days)</option>
-                      <option value={4320}>3 วัน (3 Days)</option>
-                      <option value={1440}>1 วัน (24 Hours)</option>
-                      <option value={480}>8 ชั่วโมง (8 Hours)</option>
-                    </select>
-                  </div>
-
                   {/* Notes Field */}
                   <div className="input-group">
                     <label style={{ display: 'block', fontSize: '13.5px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>
@@ -810,10 +777,6 @@ export default function CreateGuest() {
               borderBottom: '2.5px dashed #e2e8f0',
               marginBottom: '16px'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>🕒 <strong>อายุการใช้งาน:</strong></span>
-                <span style={{ color: '#0F3A6C', fontWeight: '700' }}>{getExpireLabel(expireAfter)}</span>
-              </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>📅 <strong>วันที่ลงทะเบียน:</strong></span>
                 <span style={{ fontWeight: '600' }}>{new Date().toLocaleDateString('th-TH')}</span>
