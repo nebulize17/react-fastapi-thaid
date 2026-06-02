@@ -52,47 +52,51 @@ function IconArrowLeft() {
 }
 
 export default function CreateGuest() {
+  const [givenName, setGivenName] = useState('')
+  const [familyName, setFamilyName] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [visitorName, setVisitorName] = useState('')
   const [expireAfter, setExpireAfter] = useState(480) // 8 Hours = 480 minutes default
   const [notes, setNotes] = useState('สร้างโดยเจ้าหน้าที่ / ประชาสัมพันธ์')
   
   const [isLoading, setIsLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
-  const [ticketData, setTicketData] = useState(null) // Stores credential ticket for printing/copying
-  const [showPassword, setShowPassword] = useState(false)
+  const [ticketData, setTicketData] = useState(null)
+  const [showPassword, setShowPassword] = useState(true)
 
-  // Auto generate a randomized guest username & passcode on page load
+  // Auto-generate username from givenName and familyName matching ThaiD format
   useEffect(() => {
-    generateRandomCreds()
+    const cleanGiven = givenName.trim().toLowerCase().replace(/[^a-z]/g, '')
+    const cleanFamily = familyName.trim().toLowerCase().replace(/[^a-z]/g, '')
+    
+    if (cleanGiven && cleanFamily) {
+      // First Name + First 2 characters of Last Name (lowercase)
+      const generated = cleanGiven + cleanFamily.slice(0, 2)
+      setUsername(generated)
+    } else {
+      setUsername('')
+    }
+  }, [givenName, familyName])
+
+  // Generate a random 6-digit numeric password on mount
+  useEffect(() => {
+    generateRandomPassword()
   }, [])
 
-  const generateRandomCreds = () => {
-    const letters = 'abcdefghijklmnopqrstuvwxyz'
+  const generateRandomPassword = () => {
     const numbers = '0123456789'
-    
-    // Generate username (e.g. g-xxxxx)
-    let randUser = 'g-'
-    for (let i = 0; i < 5; i++) {
-      randUser += letters.charAt(Math.floor(Math.random() * letters.length))
-    }
-    
-    // Generate simple numerical passcode for easy keyboard input
     let randPass = ''
     for (let i = 0; i < 6; i++) {
       randPass += numbers.charAt(Math.floor(Math.random() * numbers.length))
     }
-    
-    setUsername(randUser)
     setPassword(randPass)
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!username.trim() || !password.trim() || !visitorName.trim()) {
-      setErrorMsg('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน')
+    if (!givenName.trim() || !familyName.trim() || !password.trim()) {
+      setErrorMsg('กรุณากรอกข้อมูลชื่อ-นามสกุล และรหัสผ่าน')
       return
     }
 
@@ -101,6 +105,8 @@ export default function CreateGuest() {
     setSuccessMsg('')
     setTicketData(null)
 
+    const visitorFullName = `${givenName.trim()} ${familyName.trim()}`
+
     try {
       const res = await fetch('/api/users/create-guest', {
         method: 'POST',
@@ -108,9 +114,9 @@ export default function CreateGuest() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          username: username.trim().toLowerCase(),
+          username: username, // generated username matching ThaiD pattern
           password: password,
-          visitor_name: visitorName.trim(),
+          visitor_name: visitorFullName,
           expire_after: parseInt(expireAfter),
           notes: notes.trim(),
         }),
@@ -123,9 +129,9 @@ export default function CreateGuest() {
 
       setSuccessMsg('สร้างบัญชีผู้ใช้งานชั่วคราวสำเร็จ!')
       setTicketData({
-        username: username.trim().toLowerCase(),
+        username: username,
         password: password,
-        visitorName: visitorName.trim(),
+        visitorName: visitorFullName,
         expireAfter: expireAfter,
         createdDate: new Date().toLocaleString('th-TH')
       })
@@ -146,7 +152,6 @@ export default function CreateGuest() {
   }
 
   const handlePrint = () => {
-    // Open a print window specifically formatted for tickets
     const printWindow = window.open('', '_blank', 'width=400,height=600')
     const expireLabel = getExpireLabel(ticketData.expireAfter)
     
@@ -261,12 +266,13 @@ export default function CreateGuest() {
   }
 
   const resetForm = () => {
-    setVisitorName('')
+    setGivenName('')
+    setFamilyName('')
     setNotes('สร้างโดยเจ้าหน้าที่ / ประชาสัมพันธ์')
     setSuccessMsg('')
     setTicketData(null)
     setErrorMsg('')
-    generateRandomCreds()
+    generateRandomPassword()
   }
 
   return (
@@ -360,45 +366,23 @@ export default function CreateGuest() {
               <div style={{ fontSize: '15px', color: '#0F3A6C', fontWeight: '600' }}>ระบุรายละเอียดบัญชีเกสท์ใหม่</div>
             </div>
 
-            {/* Input Name */}
-            <div className="input-group">
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#4b5563', marginBottom: '6px' }}>
-                ชื่อผู้เข้าใช้บริการ (Visitor Full Name) <span style={{ color: '#ef4444' }}>*</span>
-              </label>
-              <input
-                type="text"
-                placeholder="เช่น นาย สมศักดิ์ ใจดี (หรือชื่อบริษัท/หน่วยงาน)"
-                value={visitorName}
-                onChange={(e) => setVisitorName(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '12px 14px',
-                  borderRadius: '10px',
-                  border: '1px solid #d1d5db',
-                  fontSize: '15px',
-                  outline: 'none',
-                }}
-                required
-              />
-            </div>
-
-            {/* Username & Generate */}
+            {/* English Given Name & Family Name */}
             <div style={{ display: 'flex', gap: '12px' }}>
               <div className="input-group" style={{ flex: 1 }}>
                 <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#4b5563', marginBottom: '6px' }}>
-                  Username <span style={{ color: '#ef4444' }}>*</span>
+                  ชื่อจริง (EN Given Name) <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <input
                   type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, ''))}
+                  placeholder="เช่น somsak"
+                  value={givenName}
+                  onChange={(e) => setGivenName(e.target.value.replace(/[^a-zA-Z]/g, ''))}
                   style={{
                     width: '100%',
                     padding: '12px 14px',
                     borderRadius: '10px',
                     border: '1px solid #d1d5db',
                     fontSize: '15px',
-                    fontFamily: 'monospace',
                     outline: 'none',
                   }}
                   required
@@ -407,13 +391,62 @@ export default function CreateGuest() {
 
               <div className="input-group" style={{ flex: 1 }}>
                 <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#4b5563', marginBottom: '6px' }}>
-                  Password <span style={{ color: '#ef4444' }}>*</span>
+                  นามสกุล (EN Family Name) <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="เช่น jaidee"
+                  value={familyName}
+                  onChange={(e) => setFamilyName(e.target.value.replace(/[^a-zA-Z]/g, ''))}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    border: '1px solid #d1d5db',
+                    fontSize: '15px',
+                    outline: 'none',
+                  }}
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Username (Auto-Generated) & Password (Custom) */}
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <div className="input-group" style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#4b5563', marginBottom: '6px' }}>
+                  Username (สุ่มอัตโนมัติ)
+                </label>
+                <input
+                  type="text"
+                  value={username}
+                  placeholder="ป้อนชื่อและนามสกุลด้านบน"
+                  readOnly
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    border: '1px solid #cbd5e1',
+                    background: '#f1f5f9',
+                    fontSize: '15px',
+                    fontFamily: 'monospace',
+                    fontWeight: '700',
+                    color: '#0F3A6C',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              <div className="input-group" style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#4b5563', marginBottom: '6px' }}>
+                  Password (ตั้งเองได้) <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <div style={{ position: 'relative' }}>
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    placeholder="เช่น 123456"
                     style={{
                       width: '100%',
                       padding: '12px 40px 12px 14px',
@@ -446,10 +479,10 @@ export default function CreateGuest() {
               </div>
             </div>
 
-            {/* Random Button */}
+            {/* Random Password Button */}
             <button
               type="button"
-              onClick={generateRandomCreds}
+              onClick={generateRandomPassword}
               style={{
                 alignSelf: 'flex-end',
                 background: 'none',
@@ -461,7 +494,7 @@ export default function CreateGuest() {
                 marginTop: '-8px'
               }}
             >
-              🔄 สุ่มบัญชีและรหัสผ่านใหม่
+              🔄 สุ่มรหัสผ่านใหม่
             </button>
 
             {/* Expire Select */}
