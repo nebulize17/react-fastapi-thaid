@@ -24,7 +24,7 @@ export default function Login() {
     window.location.href = '/api/auth/login' + window.location.search
   }
 
-  const handleGuestSubmit = (e) => {
+  const handleGuestSubmit = async (e) => {
     e.preventDefault()
     if (!guestUsername.trim() || !guestPassword.trim()) {
       setFormError('กรุณากรอกชื่อผู้ใช้งานและรหัสผ่านคูปอง')
@@ -35,7 +35,24 @@ export default function Login() {
     setFormError('')
 
     try {
-      // 1. บันทึกข้อมูล captive_params ลง localStorage เพื่อให้หน้า /keepalive แสดงผลได้
+      // 1. เรียกใช้งาน API หลังบ้านเพื่อยืนยันตัวตนกับ ClearPass และยิง API เปิดเน็ตที่ FortiGate
+      const response = await fetch('/api/users/login-guest', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          username: guestUsername.trim(),
+          password: guestPassword.trim()
+        })
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.detail || 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง')
+      }
+
+      // 2. บันทึกข้อมูล captive_params ลง localStorage เพื่อให้หน้า /keepalive แสดงผลได้
       const captiveData = {
         mac: mac,
         ip: ip,
@@ -45,36 +62,27 @@ export default function Login() {
       }
       localStorage.setItem('captive_params', JSON.stringify(captiveData))
 
-      // 2. บันทึกข้อมูลจำลองความสำเร็จสำหรับเกสท์ลง localStorage
+      // 3. บันทึกข้อมูลความสำเร็จสำหรับเกสท์ลง localStorage
       const successData = {
         user_info: {
           title: 'Guest',
-          name: 'ผู้ใช้งานอินเทอร์เน็ตชั่วคราว (Guest)',
+          name: data.visitor_name || 'ผู้ใช้งานอินเทอร์เน็ตชั่วคราว (Guest)',
           pid: 'GUEST-USER'
         },
-        username: guestUsername.trim(),
-        password: guestPassword,
+        username: data.username,
+        password: guestPassword.trim(),
         fw_ip: fwIp,
-        fw_port: "1000",
+        fw_port: "1442",
         fw_path: "/fgtauth"
       }
       localStorage.setItem('thaid_success_data', JSON.stringify(successData))
 
-      // 3. ทำการยิง Submit ไปหา FortiGate ผ่าน iframe ซ่อนในเบื้องหลัง
-      if (magic && formRef.current) {
-        formRef.current.submit()
-        
-        // หน่วงเวลา 1.5 วินาทีเพื่อให้ฟอร์มส่งเสร็จ แล้วนำทางไปหน้า /keepalive
-        setTimeout(() => {
-          window.location.href = '/keepalive'
-        }, 1500)
-      } else {
-        // หากไม่มีค่า magic (เปิดเว็บทดสอบตรงๆ) ให้ข้ามไปหน้า /keepalive เลย
-        window.location.href = '/keepalive'
-      }
+      // 4. นำทางไปยังหน้าจอ /keepalive ทันที (เนื่องจากเปิดเน็ตเสร็จสิ้นจากหลังบ้านแล้ว!)
+      window.location.href = '/keepalive'
+
     } catch (err) {
       console.error(err)
-      setFormError('เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์')
+      setFormError(err.message || 'เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์')
       setIsSubmitting(false)
     }
   }

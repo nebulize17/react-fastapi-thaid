@@ -116,3 +116,92 @@ async def create_guest(req_data: GuestCreateRequest):
         logger.error(f"Unexpected error creating CPPM user: {str(e)}")
         raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาดที่คาดไม่ถึง: {str(e)}")
 
+
+class GuestLoginRequest(BaseModel):
+    username: str
+    password: str
+
+@router.post("/login-guest")
+async def login_guest(req_data: GuestLoginRequest, request: Request):
+    """
+    ล็อกอินบัญชีเกสท์ชั่วคราว (Manual Guest)
+    1. ตรวจสอบชื่อผู้ใช้งานและรหัสผ่านกับ ClearPass
+    2. หากถูกต้อง จะยิง FortiGate REST API เพื่อเปิดสิทธิ์การใช้งานให้อินเทอร์เน็ตทันที
+    """
+    username = req_data.username.strip()
+    password = req_data.password.strip()
+
+    # ดึง IP ไคลเอนต์จริง
+    client_ip = ""
+    x_forwarded_for = request.headers.get("x-forwarded-for")
+    if x_forwarded_for:
+        client_ip = x_forwarded_for.split(",")[0].strip()
+    else:
+        client_ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
+
+    if not client_ip:
+        raise HTTPException(status_code=400, detail="ไม่พบหมายเลข IP ของไคลเอนต์ ไม่สามารถเปิดสิทธิ์เน็ตได้")
+
+    if not CPPM_HOST or not CPPM_CLIENT_ID or not CPPM_CLIENT_SECRET:
+        raise HTTPException(status_code=500, detail="ระบบหลังบ้านไม่ได้ตั้งค่า ClearPass")
+
+    try:
+        async with httpx.AsyncClient(verify=False) as client:
+            token_url = f"https://{CPPM_HOST}/api/oauth"
+            
+            # ดึง Access token ของระบบหลักก่อน
+            token_data = {
+                "grant_type": "client_credentials",
+                "client_id": CPPM_CLIENT_ID,
+                "client_secret": CPPM_CLIENT_SECRET
+            }
+            token_res = await client.post(token_url, data=token_data, timeout=10)
+            if token_res.status_code != 200:
+                raise HTTPException(status_code=500, detail="ไม่สามารถเชื่อมต่อ ClearPass API ได้")
+
+            access_token = token_res.json().get("access_token")
+            
+            # ดึงข้อมูล Guest user เพื่อมาตรวจสอบ
+            user_url = f"https://{CPPM_HOST}/api/guest/username/{username}"
+            headers = {"Authorization": f"Bearer {access_token}"}
+            user_res = await client.get(user_url, headers=headers, timeout=10)
+            
+            if user_res.status_code != 200:
+                raise HTTPException(status_code=400, detail="ชื่อผู้ใช้งานหรือรหัสผ่านคูปองไม่ถูกต้อง")
+
+            user_data = user_res.json()
+            
+            # ตรวจสอบความถูกต้องของรหัสผ่าน
+            db_password = user_data.get("password") or user_data.get("cleartext_password")
+            if not db_password or db_password != password:
+                raise HTTPException(status_code=400, detail="รหัสผ่านคูปองไม่ถูกต้อง")
+
+            # ตรวจสอบว่าบัญชีเปิดใช้งานอยู่หรือไม่ (enabled)
+            if not user_data.get("enabled", True):
+                raise HTTPException(status_code=400, detail="บัญชีผู้ใช้งานนี้ถูกระงับการใช้งานชั่วคราว")
+
+            # 2. บัญชีถูกต้อง! ยิง FortiGate REST API เพื่อเปิดสิทธิ์การใช้งาน
+            from app.routes.auth import authenticate_fortigate_api
+            logger.info(f"Guest login success for '{username}', activating IP {client_ip} via FortiGate REST API")
+            
+            fw_success = await authenticate_fortigate_api(username, client_ip)
+            if not fw_success:
+                logger.warning(f"FortiGate API activation returned fail for IP {client_ip}")
+            
+            # ดึงข้อมูล visitor_name มาส่งให้ frontend บันทึก
+            visitor_name = user_data.get("visitor_name", "ผู้ใช้งานชั่วคราว (Guest)")
+            
+            return {
+                "status": "success",
+                "username": username,
+                "visitor_name": visitor_name,
+                "client_ip": client_ip
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error authenticating guest: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาดในการตรวจสอบบัญชีกับ ClearPass: {str(e)}")
+
+
