@@ -76,13 +76,17 @@ async def create_guest(req_data: GuestCreateRequest):
                 raise HTTPException(status_code=500, detail="ไม่สามารถเชื่อมต่อ ClearPass ได้ (Access Token Missing)")
 
             # 2. ส่งคำร้องสร้าง Guest User ใน ClearPass
+            # บันทึกรหัสผ่านในฟิลด์ notes เพื่อช่วยให้สามารถดึงข้อมูลรหัสผ่านกลับมาตรวจสอบความถูกต้องได้เนื่องจาก ClearPass GET API จะซ่อนรหัสผ่านไว้
+            original_notes = req_data.notes or "สร้างจากหน้าพอร์ทัลแอดมินด้วยผู้ใช้ทั่วไป"
+            notes_with_pwd = f"{original_notes} | PWD:{req_data.password}"
+
             user_url = f"https://{CPPM_HOST}/api/guest"
             user_payload = {
                 "enabled": True,
                 "username": req_data.username.strip(),
                 "password": req_data.password,
                 "visitor_name": req_data.visitor_name.strip(),
-                "notes": req_data.notes or "สร้างจากหน้าพอร์ทัลแอดมินด้วยผู้ใช้ทั่วไป",
+                "notes": notes_with_pwd,
                 "expire_after": req_data.expire_after,  # หน่วยนาที
                 "role_id": 2  # Guest Role ID ใน ClearPass
             }
@@ -172,7 +176,15 @@ async def login_guest(req_data: GuestLoginRequest, request: Request):
             user_data = user_res.json()
             
             # ตรวจสอบความถูกต้องของรหัสผ่าน
-            db_password = user_data.get("password") or user_data.get("cleartext_password")
+            notes = user_data.get("notes", "")
+            db_password = None
+            if "PWD:" in notes:
+                db_password = notes.split("PWD:")[-1].strip()
+            
+            # Fallback หากไม่มีการบันทึกใน notes (เช่น บัญชีเดิม)
+            if not db_password:
+                db_password = user_data.get("password") or user_data.get("cleartext_password")
+                
             if not db_password or db_password != password:
                 raise HTTPException(status_code=400, detail="รหัสผ่านคูปองไม่ถูกต้อง")
 

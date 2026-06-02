@@ -537,10 +537,41 @@ async def auth_callback(request: Request, response: Response):
                 
                 if user_res.status_code == 200:
                     user_data = user_res.json()
-                    db_password = user_data.get("password") or user_data.get("cleartext_password")
-                    if db_password:
-                        password = db_password
-                        logger.info(f"Found existing pre-created ClearPass user '{username}'. Successfully pulled stored password from ClearPass Guest Database.")
+                    
+                    # 1. Try to extract plain-text password from 'notes' field (stored during manual creation)
+                    notes = user_data.get("notes", "")
+                    db_password = None
+                    if "PWD:" in notes:
+                        db_password = notes.split("PWD:")[-1].strip()
+                        logger.info(f"Successfully extracted stored password from ClearPass notes for user '{username}'")
+                    
+                    # 2. If not found in notes, update/PATCH the password in ClearPass dynamically to 'username'
+                    # so that RADIUS PAP authentication will succeed.
+                    if not db_password:
+                        logger.info(f"No password signature in notes for '{username}'. Dynamically updating ClearPass password to match username.")
+                        user_id = user_data.get("id")
+                        update_url = f"https://{CPPM_HOST}/api/guest/username/{username}"
+                        if user_id:
+                            update_url = f"https://{CPPM_HOST}/api/guest/{user_id}"
+                        
+                        patch_payload = {"password": username}
+                        patch_headers = {
+                            "Authorization": f"Bearer {access_token}",
+                            "Content-Type": "application/json"
+                        }
+                        try:
+                            patch_res = await client.patch(update_url, json=patch_payload, headers=patch_headers, timeout=10)
+                            if patch_res.status_code in [200, 204]:
+                                db_password = username
+                                logger.info(f"Successfully updated ClearPass user '{username}' password to match username.")
+                            else:
+                                logger.error(f"Failed to patch ClearPass password: {patch_res.text}")
+                        except Exception as patch_err:
+                            logger.error(f"Exception during ClearPass password patch: {str(patch_err)}")
+                    
+                    # 3. Apply the final password
+                    password = db_password or username
+                    logger.info(f"Using password for FortiGate captive portal: {password}")
                 else:
                     # ปฏิเสธการล็อกอิน! เนื่องจากไม่มีบัญชีนี้อยู่ในระบบเกสท์ (ห้ามสร้างอัตโนมัติ)
                     logger.warning(f"Access Denied: User '{username}' was NOT pre-created by administrator in ClearPass Guest Database.")
