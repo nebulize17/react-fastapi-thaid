@@ -220,6 +220,43 @@ export default function QRPortal({ keepaliveOnly }) {
     }
   }, [keepaliveOnly])
 
+  const handleManualAuthFallback = () => {
+    const magic = captiveParams.magic || ''
+    const username = successData?.username || ''
+    const password = successData?.password || ''
+    const postTarget = `https://192.168.150.1:1442/fgtauth`
+
+    if (magic) {
+      const form = document.createElement('form')
+      form.method = 'POST'
+      form.action = postTarget
+      form.style.display = 'none'
+
+      const magicInput = document.createElement('input')
+      magicInput.type = 'hidden'
+      magicInput.name = 'magic'
+      magicInput.value = magic
+      form.appendChild(magicInput)
+
+      const userInput = document.createElement('input')
+      userInput.type = 'hidden'
+      userInput.name = 'username'
+      userInput.value = username
+      form.appendChild(userInput)
+
+      const passInput = document.createElement('input')
+      passInput.type = 'hidden'
+      passInput.name = 'password'
+      passInput.value = password
+      form.appendChild(passInput)
+
+      document.body.appendChild(form)
+      form.submit()
+    } else {
+      alert('ไม่พบข้อมูลเซสชันล็อกอิน กรุณาลองล็อกอินใหม่อีกครั้ง')
+    }
+  }
+
   // ----------------------------------------------------------------
   // Ticking Keepalive Session Timer (8 Hours)
   // ----------------------------------------------------------------
@@ -521,7 +558,35 @@ export default function QRPortal({ keepaliveOnly }) {
               <span>ลงชื่อออกจากการใช้งาน (Log Out)</span>
             </button>
 
-            <div className="keepalive-warning">
+            {/* Fallback Connection Trigger */}
+            <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '12px', padding: '16px', marginTop: '16px', textAlign: 'left' }}>
+              <div style={{ fontWeight: '700', color: '#b45309', marginBottom: '6px', fontSize: '14px' }}>
+                ⚠️ หากอินเทอร์เน็ตยังใช้งานไม่ได้อัตโนมัติ
+              </div>
+              <p style={{ fontSize: '13px', color: '#78350f', lineHeight: '1.5', marginBottom: '12px', margin: 0 }}>
+                เนื่องจากบางเบราว์เซอร์บล็อกการรับรองความปลอดภัยของตัวไฟร์วอลล์ในเบื้องหลัง กรุณาคลิกปุ่มด้านล่างเพื่อเปิดการใช้งานอินเทอร์เน็ตด้วยตนเอง
+              </p>
+              <button
+                onClick={handleManualAuthFallback}
+                style={{
+                  width: '100%',
+                  padding: '10px 16px',
+                  background: '#d97706',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 10px rgba(217, 119, 6, 0.2)',
+                  marginTop: '10px'
+                }}
+              >
+                👉 คลิกที่นี่เพื่อเปิดสิทธิ์เข้าใช้เน็ตทันที
+              </button>
+            </div>
+
+            <div className="keepalive-warning" style={{ marginTop: '16px' }}>
               ⚠️ *กรุณาเปิดหน้านี้ค้างไว้จนกว่าจะเลิกใช้งาน เพื่อคงสถานะเชื่อมต่ออินเทอร์เน็ต
             </div>
           </div>
