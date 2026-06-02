@@ -26,6 +26,7 @@ import uuid
 import time
 import json
 import logging
+import asyncio
 import httpx
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode, quote
@@ -583,11 +584,11 @@ async def auth_callback(request: Request, response: Response):
         logger.error("ClearPass settings missing on server.")
         return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_config_missing")
 
-    # Trigger FortiGate REST API Session Authentication
+    # Trigger FortiGate REST API Session Authentication in the background (Non-blocking)
     client_ip = captive_data.get("ip")
     if client_ip:
-        logger.info(f"Triggering FortiGate REST API Auth for username '{username}' and IP '{client_ip}'")
-        await authenticate_fortigate_api(username, client_ip)
+        logger.info(f"Triggering background FortiGate REST API Auth task for username '{username}' and IP '{client_ip}'")
+        asyncio.create_task(authenticate_fortigate_api(username, client_ip))
     else:
         logger.warning(f"No client IP found for user '{username}'. Skipping FortiGate REST API Auth.")
 

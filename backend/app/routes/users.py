@@ -3,6 +3,7 @@ import jwt
 import httpx
 import logging
 import json
+import asyncio
 from pydantic import BaseModel
 from typing import Optional
 from app.config import (
@@ -194,11 +195,8 @@ async def login_guest(req_data: GuestLoginRequest, request: Request):
 
             # 2. บัญชีถูกต้อง! ยิง FortiGate REST API เพื่อเปิดสิทธิ์การใช้งาน
             from app.routes.auth import authenticate_fortigate_api
-            logger.info(f"Guest login success for '{username}', activating IP {client_ip} via FortiGate REST API")
-            
-            fw_success = await authenticate_fortigate_api(username, client_ip)
-            if not fw_success:
-                logger.warning(f"FortiGate API activation returned fail for IP {client_ip}")
+            # ยิง FortiGate REST API เพื่อเปิดสิทธิ์การใช้งานในเบื้องหลัง (Non-blocking)
+            asyncio.create_task(authenticate_fortigate_api(username, client_ip))
             
             # ดึงข้อมูล visitor_name มาส่งให้ frontend บันทึก
             visitor_name = user_data.get("visitor_name", "ผู้ใช้งานชั่วคราว (Guest)")
