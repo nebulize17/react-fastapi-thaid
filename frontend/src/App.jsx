@@ -3,6 +3,7 @@ import QRPortal from './components/QRPortal'
 import Login from './components/Login'
 import Dashboard from './components/Dashboard'
 import Logout from './components/Logout'
+import CreateGuest from './components/CreateGuest'
 
 function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname)
@@ -21,6 +22,7 @@ function App() {
   // /keepalive    → QRPortal (หน้า Keepalive Dashboard หลังต่อติดแล้ว)
   // /logout       → Logout (หน้าหลังจากออกจากระบบสำเร็จ)
   // /dashboard    → Dashboard (แสดงข้อมูลผู้ใช้หลัง auth)
+  // /admin /create-guest → CreateGuest (สร้างบัญชีเกสท์ชั่วคราว)
   let content
   if (currentPath === '/dashboard') {
     content = <Dashboard />
@@ -30,6 +32,8 @@ function App() {
     content = <QRPortal keepaliveOnly={true} />
   } else if (currentPath === '/logout') {
     content = <Logout />
+  } else if (currentPath === '/admin' || currentPath === '/create-guest') {
+    content = <CreateGuest />
   } else {
     content = <Login />
   }
