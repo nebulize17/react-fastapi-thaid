@@ -539,6 +539,13 @@ html, body {
 }
 
 /* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .admin-grid {
+    grid-template-columns: 1fr !important;
+    gap: 20px !important;
+  }
+}
+
 @media (max-width: 480px) {
   .portal-root {
     padding: 12px;
