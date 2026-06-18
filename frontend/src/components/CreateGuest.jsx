@@ -66,6 +66,7 @@ export default function CreateGuest() {
   const [successMsg, setSuccessMsg] = useState('')
   const [ticketData, setTicketData] = useState(null)
   const [showPassword, setShowPassword] = useState(true)
+  const [isManualPassword, setIsManualPassword] = useState(false)
 
   // Auto-generate username from givenName and familyName matching ThaiD format
   useEffect(() => {
@@ -93,6 +94,7 @@ export default function CreateGuest() {
       randPass += numbers.charAt(Math.floor(Math.random() * numbers.length))
     }
     setPassword(randPass)
+    setIsManualPassword(false)
   }
 
   const handleSubmit = async (e) => {
@@ -104,6 +106,21 @@ export default function CreateGuest() {
     if (!givenName.trim() || !familyName.trim() || !password.trim()) {
       setErrorMsg('กรุณากรอกข้อมูลชื่อ-นามสกุล และรหัสผ่าน')
       return
+    }
+
+    // Validate manually entered password
+    if (isManualPassword) {
+      if (password.length < 8) {
+        setErrorMsg('รหัสผ่านที่ตั้งเองต้องมีอักขระอย่างน้อย 8 ตัว หรือมากกว่า')
+        return
+      }
+      const hasUppercase = /[A-Z]/.test(password)
+      const hasLowercase = /[a-z]/.test(password)
+      const hasNumber = /[0-9]/.test(password)
+      if (!hasUppercase || !hasLowercase || !hasNumber) {
+        setErrorMsg('รหัสผ่านที่ตั้งเองควรมีการผสมกันของตัวอักษรพิมพ์ใหญ่ (ABCD) ตัวอักษรพิมพ์เล็ก (abcd) ตัวเลข (1234)')
+        return
+      }
     }
 
     setIsLoading(true)
@@ -522,7 +539,10 @@ export default function CreateGuest() {
                         <input
                           type={showPassword ? 'text' : 'password'}
                           value={password}
-                          onChange={(e) => setPassword(e.target.value)}
+                          onChange={(e) => {
+                            setPassword(e.target.value)
+                            setIsManualPassword(true)
+                          }}
                           placeholder="ระบุรหัสผ่านเข้าใช้งาน"
                           style={{
                             width: '100%',
@@ -555,6 +575,18 @@ export default function CreateGuest() {
                           {showPassword ? 'ซ่อน' : 'แสดง'}
                         </button>
                       </div>
+                      {isManualPassword && (
+                        <div style={{ marginTop: '8px', fontSize: '12.5px', display: 'flex', flexDirection: 'column', gap: '4px', background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: password.length >= 8 ? '#22c55e' : '#ef4444', fontWeight: '500' }}>
+                            <span>{password.length >= 8 ? '✓' : '✗'}</span>
+                            <span>รหัสผ่านมีอักขระอย่างน้อย 8 ตัว (ปัจจุบัน: {password.length} ตัว)</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: (/[A-Z]/.test(password) && /[a-z]/.test(password) && /[0-9]/.test(password)) ? '#22c55e' : '#ef4444', fontWeight: '500' }}>
+                            <span>{(/[A-Z]/.test(password) && /[a-z]/.test(password) && /[0-9]/.test(password)) ? '✓' : '✗'}</span>
+                            <span>ผสมตัวอักษรพิมพ์ใหญ่ (A-Z) ตัวอักษรพิมพ์เล็ก (a-z) และตัวเลข (0-9)</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
