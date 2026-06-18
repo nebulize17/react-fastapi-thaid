@@ -82,17 +82,31 @@ export default function CreateGuest() {
     }
   }, [givenName, familyName])
 
-  // Generate a random 6-digit numeric password on mount
+  // Generate a random secure password on mount
   useEffect(() => {
     generateRandomPassword()
   }, [])
 
   const generateRandomPassword = () => {
-    const numbers = '0123456789'
+    const uppercase = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+    const lowercase = 'abcdefghijkmnopqrstuvwxyz'
+    const numbers = '23456789'
+    const allChars = uppercase + lowercase + numbers
+
     let randPass = ''
-    for (let i = 0; i < 6; i++) {
-      randPass += numbers.charAt(Math.floor(Math.random() * numbers.length))
+    // Ensure we have at least one uppercase, lowercase, and digit
+    randPass += uppercase.charAt(Math.floor(Math.random() * uppercase.length))
+    randPass += lowercase.charAt(Math.floor(Math.random() * lowercase.length))
+    randPass += numbers.charAt(Math.floor(Math.random() * numbers.length))
+
+    // Fill up to 8 characters
+    for (let i = 0; i < 5; i++) {
+      randPass += allChars.charAt(Math.floor(Math.random() * allChars.length))
     }
+
+    // Shuffle characters
+    randPass = randPass.split('').sort(() => 0.5 - Math.random()).join('')
+
     setPassword(randPass)
     setIsManualPassword(false)
   }
@@ -608,7 +622,7 @@ export default function CreateGuest() {
                       gap: '4px'
                     }}
                   >
-                    🔄 สุ่มรหัสผ่านใหม่ (Random 6 Digits)
+                    🔄 สุ่มรหัสผ่านใหม่ (Random Password)
                   </button>
 
                   {/* Notes Field */}
@@ -793,7 +807,7 @@ export default function CreateGuest() {
                   รหัสผ่าน (Password)
                 </div>
                 <div style={{ fontSize: '20px', fontWeight: '800', color: '#0F3A6C', fontFamily: 'monospace', marginTop: '4px', letterSpacing: '0.5px' }}>
-                  {password || '401004'}
+                  {password || 'aB3d5xYz'}
                 </div>
               </div>
             </div>
