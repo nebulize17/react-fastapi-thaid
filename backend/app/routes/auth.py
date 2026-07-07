@@ -746,7 +746,7 @@ async def auth_callback(request: Request, response: Response):
 <body>
   <iframe id="auth_iframe" name="auth_iframe" style="display: none;"></iframe>
   
-  <form id="auth_form" method="POST" action="https://192.168.150.1:1442/fgtauth" target="auth_iframe" style="display: none;">
+  <form id="auth_form" method="POST" action="https://{FORTIGATE_IP}:1442/fgtauth" target="auth_iframe" style="display: none;">
     <input type="hidden" name="magic" value="{magic}" />
     <input type="hidden" name="username" value="{username}" />
     <input type="hidden" name="password" value="{password}" />
