@@ -5,8 +5,38 @@ export default function Login() {
   const error = params.get('error')
 
   const handleLogin = () => {
-    // Using relative path to work on both local and Ubuntu
-    window.location.href = '/api/auth/login' + window.location.search
+    const magic = params.get('magic') || ''
+    const originalUrl = params.get('original_url') || params.get('url') || ''
+    const authUrl = params.get('auth_url') || ''
+    const mac = params.get('mac') || params.get('client_mac') || ''
+    const ip = params.get('ip') || params.get('client_ip') || ''
+    const fwIp = params.get('fw_ip') || ''
+
+    // จัดเตรียม state สำหรับส่งไปพร้อมกับ oauth callback
+    const stateObj = {
+      mac: mac,
+      ip: ip,
+      originalUrl: originalUrl,
+      magic: magic,
+      fw_ip: fwIp,
+      auth_url: authUrl,
+      qr_session: ''
+    }
+
+    // ข้อมูลสำหรับเชื่อมต่อ ThaiD (ต้องตรงกับฝั่ง Backend ใน .env)
+    const clientId = 'cTFDQlVxVHFBWWVaT3hDckprZ3R4aDdvakk4c21mZ1o' // THAID_CLIENT_ID
+    const redirectUri = 'https://api-gateway.dtam.moph.go.th/api/auth/callback' // THAID_CALLBACK_ENDPOINT
+    const scopes = 'openid pid title title_en given_name_en family_name_en name name_en'
+
+    const thaidAuthUrl = 'https://imauth.bora.dopa.go.th/api/v2/oauth2/auth/' +
+      '?response_type=code' +
+      '&client_id=' + encodeURIComponent(clientId) +
+      '&redirect_uri=' + encodeURIComponent(redirectUri) +
+      '&scope=' + encodeURIComponent(scopes) +
+      '&state=' + encodeURIComponent(JSON.stringify(stateObj))
+
+    // ทำการนำทางไปยังหน้าจอยืนยันตัวตนของ ThaiD โดยตรง
+    window.location.href = thaidAuthUrl
   }
 
   return (
