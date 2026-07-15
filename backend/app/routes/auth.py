@@ -337,12 +337,11 @@ async def login(
     magic: str = None,
     fw_ip: str = None,
     auth_url: str = None,
-    qr_session: str = None,
+    qr_session: str = None,   # ← QR Flow: session_id จาก QR Code
 ):
-    """Initiate the ThaID OAuth2 Login Flow.
-    ฝัง captive params ไว้ใน state เพื่อรองรับทุก device รวมถึง Tablet ที่ session cookie อาจหายระหว่าง redirect
-    """
-    # Extract real client IP
+    """Initiate the ThaID OAuth2 Login Flow. Supports Captive Portal parameters and QR session."""
+    # เก็บ captive portal params ใน HTTP session
+    # Extract client real IP (essential when behind Nginx in Docker)
     real_ip = ip
     if not real_ip:
         x_forwarded_for = request.headers.get("x-forwarded-for")
@@ -351,13 +350,14 @@ async def login(
         else:
             real_ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
 
-    # เก็บใน session เป็น fallback
     if mac: request.session['guest_mac'] = mac
     request.session['guest_ip'] = real_ip
     if url: request.session['original_url'] = url
     if magic: request.session['fortigate_magic'] = magic
     if fw_ip: request.session['fortigate_ip'] = fw_ip
     if auth_url: request.session['auth_url'] = auth_url
+
+    # เก็บ QR session_id ไว้ใน HTTP session เพื่อดึงใน callback
     if qr_session:
         request.session['qr_session_id'] = qr_session
         logger.info(f"QR Login initiated for session: {qr_session}")
@@ -366,19 +366,8 @@ async def login(
     if THAID_CALLBACK_ENDPOINT and THAID_CALLBACK_ENDPOINT.startswith("https://"):
         redirect_uri = redirect_uri.replace("http://", "https://", 1)
 
-    # ฝัง captive params ไว้ใน state ด้วย เพื่อรองรับ browser ที่ไม่ทำงานด้วย session cookie (Tablet, WebView)
-    captive_state = json.dumps({
-        "mac": mac or "",
-        "ip": real_ip or "",
-        "originalUrl": url or "",
-        "magic": magic or "",
-        "fw_ip": fw_ip or FORTIGATE_IP or "",
-        "auth_url": auth_url or "",
-        "qr_session": qr_session or "",
-    })
-
-    logger.info(f"Initiating login with redirect_uri: {redirect_uri}, captive_state embedded")
-    return await oauth.thaid.authorize_redirect(request, redirect_uri, state=captive_state)
+    logger.info(f"Initiating login with redirect_uri: {redirect_uri}")
+    return await oauth.thaid.authorize_redirect(request, redirect_uri)
 
 
 # ============================================================
@@ -411,7 +400,7 @@ async def auth_callback(request: Request, response: Response):
         redirect_uri = redirect_uri.replace("http://", "https://", 1)
 
     if is_qr_flow:
-        # --- QR Flow ---
+        # --- QR Flow: สแกนข้ามเครื่อง (มือถือ -> คอมพิวเตอร์) ---
         qr_session_id = state
         sess = qr_sessions[state]
         captive_data = {
@@ -429,6 +418,7 @@ async def auth_callback(request: Request, response: Response):
                 if THAID_API_KEY:
                     headers['x-api-key'] = THAID_API_KEY
 
+                # 1. แลก Authorization Code เป็น Access Token
                 token_url = "https://imauth.bora.dopa.go.th/api/v2/oauth2/token/"
                 token_data = {
                     "grant_type": "authorization_code",
@@ -454,6 +444,7 @@ async def auth_callback(request: Request, response: Response):
                     qr_sessions[state]["status"] = "error"
                     return RedirectResponse(url=f"{FRONTEND_URL}/?error=no_access_token")
 
+                # 2. ดึงข้อมูล User Info ด้วย Access Token
                 userinfo_url = "https://imauth.bora.dopa.go.th/api/v2/oauth2/userinfo/"
                 userinfo_headers = {"Authorization": f"Bearer {access_token}"}
                 if THAID_API_KEY:
@@ -477,18 +468,8 @@ async def auth_callback(request: Request, response: Response):
             return RedirectResponse(url=f"{FRONTEND_URL}/?error=manual_exchange_exception&detail={str(e)}")
 
     else:
-        # --- Standard Redirect Flow ---
-        # อ่าน captive params จาก state (primary) ก่อน session cookie (fallback)
-        # เพื่อรองรับ Tablet/WebView ที่ session cookie อาจหาย
-        state_captive = {}
-        try:
-            state_captive = json.loads(state)
-            if not isinstance(state_captive, dict):
-                state_captive = {}
-        except (json.JSONDecodeError, TypeError):
-            state_captive = {}
-
-        logger.info(f"Processing standard Redirect Flow callback. State captive data: {state_captive}")
+        # --- Standard Redirect Flow (กรณีสแกน/เข้าสู่ระบบด้วยอุปกรณ์เดียวกัน) ---
+        logger.info("Processing standard Redirect Flow callback")
         try:
             token = await oauth.thaid.authorize_access_token(request)
             user_info = token.get('userinfo')
@@ -497,28 +478,19 @@ async def auth_callback(request: Request, response: Response):
                 logger.error("No userinfo found in token.")
                 return RedirectResponse(url=f"{FRONTEND_URL}/?error=no_userinfo")
 
-            # ใช้ state เป็น primary, session cookie เป็น fallback
+            # ดึงข้อมูลจาก session
             captive_data = {
-                "mac": state_captive.get("mac") or request.session.get('guest_mac', ""),
-                "ip": state_captive.get("ip") or request.session.get('guest_ip', ""),
-                "original_url": state_captive.get("originalUrl") or request.session.get('original_url', ""),
-                "magic": state_captive.get("magic") or request.session.get('fortigate_magic', ""),
-                "fw_ip": state_captive.get("fw_ip") or request.session.get('fortigate_ip', FORTIGATE_IP) or FORTIGATE_IP,
-                "auth_url": state_captive.get("auth_url") or request.session.get('auth_url', ""),
+                "mac": request.session.get('guest_mac', ""),
+                "ip": request.session.get('guest_ip', ""),
+                "original_url": request.session.get('original_url', ""),
+                "magic": request.session.get('fortigate_magic', ""),
+                "fw_ip": request.session.get('fortigate_ip', FORTIGATE_IP),
             }
-
-            # ตรวจสอบ qr_session จาก state ก่อน session cookie
-            qr_from_state = state_captive.get("qr_session", "")
-            if qr_from_state and qr_from_state in qr_sessions:
-                qr_session_id = qr_from_state
-
-            logger.info(f"Captive data resolved: mac={captive_data['mac']}, ip={captive_data['ip']}, magic={'SET' if captive_data['magic'] else 'EMPTY'}")
         except Exception as e:
             logger.error(f"Authlib Callback Error: {str(e)}")
             import traceback
             traceback.print_exc()
             return RedirectResponse(url=f"{FRONTEND_URL}/?error=callback_failed&detail={str(e)}")
-
 
     pid = user_info.get('pid') or user_info.get('sub', '')
     logger.info(f"ThaiD Callback success! PID: {pid}")
@@ -698,18 +670,12 @@ async def auth_callback(request: Request, response: Response):
         logger.info("Processing standard Redirect Flow callback HTML generator")
         
         user_info_json = json.dumps(user_info, ensure_ascii=False)
-        magic      = captive_data.get("magic", "")
-        ip         = captive_data.get("ip", "")
-        mac        = captive_data.get("mac", "")
-        fw_ip      = captive_data.get("fw_ip", FORTIGATE_IP)
+        magic = captive_data.get("magic", "")
+        ip = captive_data.get("ip", "")
+        mac = captive_data.get("mac", "")
+        fw_ip = captive_data.get("fw_ip", FORTIGATE_IP)
         original_url = captive_data.get("original_url", "")
-        # ใช้ auth_url จาก FortiGate (%%AUTH_POST_URL%%) ถ้ามี
-        # มิฉะนั้น fallback ไป IP:port จาก config
-        auth_url_from_fg = captive_data.get("auth_url", "")
-        form_action = auth_url_from_fg if auth_url_from_fg else f"https://{fw_ip}:{FORTIGATE_AUTH_PORT}{FORTIGATE_AUTH_PATH}"
-
-        logger.info(f"Standard flow HTML: magic={'SET' if magic else 'EMPTY'}, form_action={form_action}, ip={ip}")
-
+        
         standard_html_content = f"""<!DOCTYPE html>
 <html lang="th">
 <head>
@@ -741,39 +707,35 @@ async def auth_callback(request: Request, response: Response):
   <script>
     window.onload = function() {{
       try {{
+        // 1. บันทึกข้อมูล captive_params ลง localStorage
         const captiveData = {{
           mac: {json.dumps(mac)},
           ip: {json.dumps(ip)},
           url: {json.dumps(original_url)},
           magic: {json.dumps(magic)},
-          fw_ip: {json.dumps(fw_ip)},
-          auth_url: {json.dumps(auth_url_from_fg)}
+          fw_ip: {json.dumps(fw_ip)}
         }};
         localStorage.setItem('captive_params', JSON.stringify(captiveData));
 
+        // 2. บันทึกข้อมูล thaid_success_data ลง localStorage
         const successData = {{
           user_info: {user_info_json},
           username: {json.dumps(username)},
           password: {json.dumps(password)},
           fw_ip: {json.dumps(fw_ip)},
           fw_port: "{FORTIGATE_AUTH_PORT}",
-          fw_path: "{FORTIGATE_AUTH_PATH}",
-          auth_url: {json.dumps(auth_url_from_fg)}
+          fw_path: "{FORTIGATE_AUTH_PATH}"
         }};
         localStorage.setItem('thaid_success_data', JSON.stringify(successData));
-
-        // Submit FortiGate auth form
+        
+        // 3. ยิง Submit ไปยัง FortiGate ผ่าน iframe
         const form = document.getElementById('auth_form');
-        if (form && {json.dumps(bool(magic))}) {{
-          console.log('[ThaiD] Submitting FortiGate auth form to:', form.action);
-          form.submit();
-        }} else {{
-          console.warn('[ThaiD] magic is empty — skipping form submit');
-        }}
-
+        form.submit();
+        
+        // 4. นำทางหน้าต่างหลักไปยัง /keepalive ในอีก 1 วินาทีถัดไป
         setTimeout(function() {{
           window.location.href = '/keepalive';
-        }}, 1500);
+        }}, 1000);
       }} catch (err) {{
         console.error('Error in callback script:', err);
         window.location.href = '/keepalive';
@@ -783,8 +745,8 @@ async def auth_callback(request: Request, response: Response):
 </head>
 <body>
   <iframe id="auth_iframe" name="auth_iframe" style="display: none;"></iframe>
-
-  <form id="auth_form" method="POST" action="{form_action}" target="auth_iframe" style="display: none;">
+  
+  <form id="auth_form" method="POST" action="https://{FORTIGATE_IP}:1442/fgtauth" target="auth_iframe" style="display: none;">
     <input type="hidden" name="magic" value="{magic}" />
     <input type="hidden" name="username" value="{username}" />
     <input type="hidden" name="password" value="{password}" />
