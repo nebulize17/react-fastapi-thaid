@@ -5,46 +5,8 @@ export default function Login() {
   const error = params.get('error')
 
   const handleLogin = () => {
-    const magic = params.get('magic') || ''
-    const originalUrl = params.get('original_url') || params.get('url') || ''
-    const authUrl = params.get('auth_url') || ''
-    const mac = params.get('mac') || params.get('client_mac') || ''
-    const ip = params.get('ip') || params.get('client_ip') || ''
-    const fwIp = params.get('fw_ip') || ''
-
-    // จัดเตรียม state สำหรับส่งไปพร้อมกับ oauth callback
-    const stateObj = {
-      mac: mac,
-      ip: ip,
-      originalUrl: originalUrl,
-      magic: magic,
-      fw_ip: fwIp,
-      auth_url: authUrl,
-      qr_session: ''
-    }
-
-    // ข้อมูลสำหรับเชื่อมต่อ ThaiD (ต้องตรงกับฝั่ง Backend ใน .env)
-    const clientId = 'cTFDQlVxVHFBWWVaT3hDckprZ3R4aDdvakk4c21mZ1o' // THAID_CLIENT_ID
-    const redirectUri = 'https://api-gateway.dtam.moph.go.th/api/auth/callback' // THAID_CALLBACK_ENDPOINT
-    const scopes = 'openid pid title title_en given_name_en family_name_en name name_en'
-
-    const thaidAuthUrl = 'https://imauth.bora.dopa.go.th/api/v2/oauth2/auth/' +
-      '?response_type=code' +
-      '&client_id=' + encodeURIComponent(clientId) +
-      '&redirect_uri=' + encodeURIComponent(redirectUri) +
-      '&scope=' + encodeURIComponent(scopes) +
-      '&state=' + encodeURIComponent(JSON.stringify(stateObj))
-
-    // ตรวจสอบว่าเป็น Android หรือไม่
-    const isAndroid = /Android/i.test(navigator.userAgent);
-    
-    // ตรวจสอบว่าเป็น Google Chrome หรือไม่ (ทั้ง iOS และ Android)
-    // CriOS = Chrome on iOS, Chrome = Chrome on Android/Desktop
-    const isChrome = /Chrome|CriOS/i.test(navigator.userAgent) && !/WebView|Version/i.test(navigator.userAgent);
-
-    // ทำการนำทางไปยังหน้าจอ DOPA สำหรับตรวจสิทธิ์โดยตรงด้วยลิงก์ HTTPS มาตรฐาน
-    // เพื่อความเสถียรและป้องกันเบราว์เซอร์บล็อก URL Scheme
-    window.location.href = thaidAuthUrl;
+    // Using relative path to work on both local and Ubuntu
+    window.location.href = '/api/auth/login' + window.location.search
   }
 
   return (
@@ -110,7 +72,6 @@ export default function Login() {
           )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {/* ปุ่มหลัก: บังคับเปิดแอป ThaiD บนเครื่อง (Mobile/Tablet App-to-App) */}
             <button 
               onClick={handleLogin}
               style={{
@@ -120,20 +81,21 @@ export default function Login() {
                 gap: '16px',
                 padding: '16px 24px',
                 borderRadius: 'var(--radius-sm)',
-                border: '2px solid var(--primary)',
-                background: 'var(--primary)',
-                color: 'white',
+                border: '2px solid var(--border)',
+                background: 'white',
                 cursor: 'pointer',
                 transition: 'all 0.3s ease',
-                boxShadow: 'var(--shadow-md)',
+                boxShadow: 'var(--shadow-sm)',
               }}
               onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = 'var(--primary)';
+                e.currentTarget.style.boxShadow = 'var(--shadow-md)';
                 e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.filter = 'brightness(1.1)';
               }}
               onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = 'var(--border)';
+                e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
                 e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.filter = 'none';
               }}
             >
               <img 
@@ -144,11 +106,11 @@ export default function Login() {
                   height: '36px',
                   borderRadius: '50%',
                   objectFit: 'contain',
-                  border: '2px solid white'
+                  border: '1px solid #f0f0f0'
                 }} 
               />
-              <span style={{ fontSize: '18px', fontWeight: '700' }}>
-                เปิดแอปพลิเคชัน ThaiD เพื่อยืนยันตัวตน
+              <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--primary)' }}>
+                เข้าสู่ระบบด้วย ThaiD
               </span>
               <svg 
                 xmlns="http://www.w3.org/2000/svg" 
@@ -156,13 +118,12 @@ export default function Login() {
                 fill="none" 
                 stroke="currentColor" 
                 strokeWidth={2.5} 
-                style={{ width: '20px', height: '20px', marginLeft: 'auto', color: 'white' }}
+                style={{ width: '20px', height: '20px', marginLeft: 'auto', color: 'var(--text-light)' }}
               >
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
             </button>
-
-
+            
             <p style={{
               fontSize: '11px',
               color: 'var(--text-light)',
