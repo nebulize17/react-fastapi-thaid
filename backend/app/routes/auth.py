@@ -470,19 +470,6 @@ async def auth_callback(request: Request, response: Response):
     else:
         # --- Standard Redirect Flow (กรณีสแกน/เข้าสู่ระบบด้วยอุปกรณ์เดียวกัน) ---
         logger.info("Processing standard Redirect Flow callback")
-        
-        # ถอดรหัส state เพื่อดึง captive portal parameters (magic, ip, mac, etc.)
-        state_captive = {}
-        if state:
-            try:
-                state_captive = json.loads(state)
-                if not isinstance(state_captive, dict):
-                    state_captive = {}
-            except Exception:
-                state_captive = {}
-        
-        logger.info(f"Resolved state parameters in standard callback: {state_captive}")
-
         try:
             token = await oauth.thaid.authorize_access_token(request)
             user_info = token.get('userinfo')
@@ -491,13 +478,13 @@ async def auth_callback(request: Request, response: Response):
                 logger.error("No userinfo found in token.")
                 return RedirectResponse(url=f"{FRONTEND_URL}/?error=no_userinfo")
 
-            # ดึงข้อมูลจาก state เป็นหลัก และ session เป็น fallback
+            # ดึงข้อมูลจาก session
             captive_data = {
-                "mac": state_captive.get("mac") or request.session.get('guest_mac', ""),
-                "ip": state_captive.get("ip") or request.session.get('guest_ip', ""),
-                "original_url": state_captive.get("originalUrl") or request.session.get('original_url', ""),
-                "magic": state_captive.get("magic") or request.session.get('fortigate_magic', ""),
-                "fw_ip": state_captive.get("fw_ip") or request.session.get('fortigate_ip', FORTIGATE_IP),
+                "mac": request.session.get('guest_mac', ""),
+                "ip": request.session.get('guest_ip', ""),
+                "original_url": request.session.get('original_url', ""),
+                "magic": request.session.get('fortigate_magic', ""),
+                "fw_ip": request.session.get('fortigate_ip', FORTIGATE_IP),
             }
         except Exception as e:
             logger.error(f"Authlib Callback Error: {str(e)}")
