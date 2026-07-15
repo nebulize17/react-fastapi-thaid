@@ -35,8 +35,24 @@ export default function Login() {
       '&scope=' + encodeURIComponent(scopes) +
       '&state=' + encodeURIComponent(JSON.stringify(stateObj))
 
-    // ทำการนำทางไปยังหน้าจอยืนยันตัวตนของ ThaiD โดยตรง
-    window.location.href = thaidAuthUrl
+    // 1. ยิงคำสั่งเรียกเปิดแอป ThaiD ผ่าน Deep Link
+    // ใช้ iframe หรือสั่งเปิด thaid:// เพื่อปลุกแอป ThaiD ในระบบขึ้นมาทำงาน
+    try {
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = 'thaid://';
+      document.body.appendChild(iframe);
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 500);
+    } catch (e) {
+      console.warn('Failed to call deep link', e);
+    }
+
+    // 2. นำหน้าจอหลักเบราว์เซอร์ไปที่ DOPA authentication endpoint
+    setTimeout(() => {
+      window.location.href = thaidAuthUrl;
+    }, 100);
   }
 
   return (
