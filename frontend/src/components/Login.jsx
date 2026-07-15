@@ -28,40 +28,9 @@ const STORE_URLS = {
  * ถ้าแอปไม่ถูกติดตั้ง (หน้าไม่ถูก blur/hidden ภายใน timeout)
  * จะ redirect ไปยัง App Store / Play Store อัตโนมัติ
  */
-function openThaiDWithStoreFallback(thaidUrl, os) {
-  const storeUrl = STORE_URLS[os]
-  if (!storeUrl) {
-    // Desktop / other — ไม่ต้องทำอะไร
-    window.location.href = thaidUrl
-    return
-  }
-
-  let appOpened = false
-
-  // ถ้า browser/tab ถูก blur → แสดงว่าแอปเปิดขึ้นแล้ว
-  const onVisibilityChange = () => {
-    if (document.hidden || document.visibilityState === 'hidden') {
-      appOpened = true
-    }
-  }
-  const onBlur = () => { appOpened = true }
-
-  document.addEventListener('visibilitychange', onVisibilityChange)
-  window.addEventListener('blur', onBlur)
-
-  // เปิด deep link
+function redirectToThaiD(thaidUrl) {
+  // redirect ไปยัง ThaiD URL โดยตรงทันที ไม่มี timeout ไม่มี fallback
   window.location.href = thaidUrl
-
-  // รอ 2.5 วินาที — ถ้าแอปไม่เปิด (appOpened ยัง false) ให้ redirect ไป Store
-  setTimeout(() => {
-    document.removeEventListener('visibilitychange', onVisibilityChange)
-    window.removeEventListener('blur', onBlur)
-
-    if (!appOpened) {
-      // แอปไม่ได้ถูกติดตั้ง → ไป Store
-      window.location.href = storeUrl
-    }
-  }, 2500)
 }
 
 /**
@@ -190,14 +159,11 @@ function ThaiDButtonContent({ loading }) {
 /** iOS: <a href> แท้ๆ — ให้ iOS WebKit handle Universal Link/App redirect จาก user tap
  * onClickFallback: ถ้าผ่านไป 2.5s แล้วแอปยังไม่เปิด (ไม่มีแอป) → redirect ไป App Store
  */
-function ThaiDLoginAnchor({ href, loading, onClickFallback }) {
+function ThaiDLoginAnchor({ href, loading }) {
   const handleClick = (e) => {
-    // ปล่อยให้ iOS Universal Link ทำงานตามปกติ
-    // พร้อมกันนั้นเริ่ม fallback timer ไปยัง App Store
-    if (onClickFallback) {
-      e.preventDefault()
-      onClickFallback()
-    }
+    // iOS: redirect ไปยัง ThaiD URL โดยตรงทันที
+    e.preventDefault()
+    redirectToThaiD(href)
   }
   return (
     <a
@@ -282,14 +248,8 @@ export default function Login() {
 
   const handleLogin = () => {
     setLoading(true)
-    if (!isMobile) {
-      // Desktop → ผ่าน backend (ThaiD web แสดง QR code)
-      window.location.href = '/api/auth/login' + window.location.search
-      return
-    }
-    // Mobile (Android) → ลองเปิดแอป ThaiD ก่อน
-    // ถ้าไม่มีแอป → redirect ไป Play Store อัตโนมัติ
-    openThaiDWithStoreFallback(thaidUrl, deviceOS)
+    // redirect ไปยัง ThaiD URL โดยตรงทันทีทุก platform
+    redirectToThaiD(thaidUrl)
   }
 
   if (!ready) return (
@@ -333,7 +293,6 @@ export default function Login() {
               <ThaiDLoginAnchor
                 href={thaidUrl}
                 loading={loading}
-                onClickFallback={() => openThaiDWithStoreFallback(thaidUrl, 'ios')}
               />
             ) : (
               <ThaiDLoginButton onClick={handleLogin} loading={loading} />
