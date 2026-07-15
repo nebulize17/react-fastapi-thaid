@@ -42,26 +42,10 @@ export default function Login() {
     // CriOS = Chrome on iOS, Chrome = Chrome on Android/Desktop
     const isChrome = /Chrome|CriOS/i.test(navigator.userAgent) && !/WebView|Version/i.test(navigator.userAgent);
 
-    if (isChrome) {
-      // สำหรับ Chrome: ส่งลิงก์ OAuth ของ ThaiD ไปโดยตรง แต่ทำการหน่วงเวลาเรียกเปิดแอป thaid:// ร่วมด้วย
-      // เพื่อรับประกันว่าหากอุปกรณ์เปิดหน้าเว็บค้างไว้ ตัวระบบปฏิบัติการจะถูกกระตุ้นให้สลับแอปขึ้นมาทำงาน
-      try {
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        iframe.src = 'thaid://';
-        document.body.appendChild(iframe);
-        setTimeout(() => {
-          document.body.removeChild(iframe);
-        }, 200);
-      } catch (e) {
-        console.warn('Failed to launch thaid://', e);
-      }
-
-      const intentUrl = `intent://imauth.bora.dopa.go.th/api/v2/oauth2/auth/?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(JSON.stringify(stateObj))}#Intent;scheme=https;package=th.go.dopa.bora.identity;S.browser_fallback_url=${encodeURIComponent(thaidAuthUrl)};end;`;
-      window.location.href = intentUrl;
-    } else if (isAndroid) {
-      // สำหรับ Android Browser อื่นๆ ที่อยู่ใน Sandbox Webview ให้ใช้ Intent บังคับออกไป Browser หลัก
-      const intentUrl = `intent://imauth.bora.dopa.go.th/api/v2/oauth2/auth/?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(JSON.stringify(stateObj))}#Intent;scheme=https;end;`;
+    if (isAndroid) {
+      // สำหรับ Android ทุกเบราว์เซอร์: บังคับส่ง URL ไปที่โปรโตคอลเปิดแอปโดยตรงผ่าน Intent ที่ถูกต้อง
+      // โดยชี้ package ไปที่ th.go.dopa.bora.identity และส่ง action ด้วย View intent
+      const intentUrl = `intent://imauth.bora.dopa.go.th/api/v2/oauth2/auth/?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(JSON.stringify(stateObj))}#Intent;scheme=https;package=th.go.dopa.bora.identity;action=android.intent.action.VIEW;end;`;
       window.location.href = intentUrl;
     } else {
       // สำหรับ iOS / อื่นๆ
