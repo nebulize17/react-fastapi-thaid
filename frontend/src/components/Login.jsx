@@ -35,24 +35,33 @@ export default function Login() {
       '&scope=' + encodeURIComponent(scopes) +
       '&state=' + encodeURIComponent(JSON.stringify(stateObj))
 
-    // 1. ยิงคำสั่งเรียกเปิดแอป ThaiD ผ่าน Deep Link
-    // ใช้ iframe หรือสั่งเปิด thaid:// เพื่อปลุกแอป ThaiD ในระบบขึ้นมาทำงาน
-    try {
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      iframe.src = 'thaid://';
-      document.body.appendChild(iframe);
-      setTimeout(() => {
-        document.body.removeChild(iframe);
-      }, 500);
-    } catch (e) {
-      console.warn('Failed to call deep link', e);
-    }
+    // ตรวจสอบว่าเป็น Android หรือไม่
+    const isAndroid = /Android/i.test(navigator.userAgent);
 
-    // 2. นำหน้าจอหลักเบราว์เซอร์ไปที่ DOPA authentication endpoint
-    setTimeout(() => {
-      window.location.href = thaidAuthUrl;
-    }, 100);
+    if (isAndroid) {
+      // ใช้ Android Intent Scheme เพื่อเปิด D-ID App โดยตรง
+      // และสลับไปที่ imauth link ทันที
+      const intentUrl = `intent://imauth.bora.dopa.go.th/api/v2/oauth2/auth/?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(JSON.stringify(stateObj))}#Intent;scheme=https;package=th.go.dopa.bora.id;end;`;
+      window.location.href = intentUrl;
+    } else {
+      // 1. สำหรับ iOS/อื่นๆ ปลุกแอปด้วย thaid://
+      try {
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = 'thaid://';
+        document.body.appendChild(iframe);
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+        }, 500);
+      } catch (e) {
+        console.warn('Failed to call deep link', e);
+      }
+
+      // 2. นำหน้าจอหลักเบราว์เซอร์ไปที่ DOPA
+      setTimeout(() => {
+        window.location.href = thaidAuthUrl;
+      }, 100);
+    }
   }
 
   return (
