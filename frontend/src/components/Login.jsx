@@ -43,8 +43,20 @@ export default function Login() {
     const isChrome = /Chrome|CriOS/i.test(navigator.userAgent) && !/WebView|Version/i.test(navigator.userAgent);
 
     if (isChrome) {
-      // 1. ถ้าเป็น Chrome ให้เรียกใช้ Intent Scheme โดยระบุ Package identity ของแอป ThaiD โดยตรง
-      // และใส่ fallback URL เป็นตัวเว็บ เพื่อให้ตัวระบบ Android ทราบว่าต้องเปิดเข้าแอป D-ID เป็นอันดับแรก
+      // สำหรับ Chrome: ส่งลิงก์ OAuth ของ ThaiD ไปโดยตรง แต่ทำการหน่วงเวลาเรียกเปิดแอป thaid:// ร่วมด้วย
+      // เพื่อรับประกันว่าหากอุปกรณ์เปิดหน้าเว็บค้างไว้ ตัวระบบปฏิบัติการจะถูกกระตุ้นให้สลับแอปขึ้นมาทำงาน
+      try {
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = 'thaid://';
+        document.body.appendChild(iframe);
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+        }, 200);
+      } catch (e) {
+        console.warn('Failed to launch thaid://', e);
+      }
+
       const intentUrl = `intent://imauth.bora.dopa.go.th/api/v2/oauth2/auth/?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(JSON.stringify(stateObj))}#Intent;scheme=https;package=th.go.dopa.bora.identity;S.browser_fallback_url=${encodeURIComponent(thaidAuthUrl)};end;`;
       window.location.href = intentUrl;
     } else if (isAndroid) {
