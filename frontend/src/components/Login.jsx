@@ -179,6 +179,36 @@ export default function Login() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
             </button>
+
+            {/* ปุ่มเสริม: กดเปิดแอปด้วยตนเอง ในกรณีที่ Chrome ไม่ Auto redirect ไปแอป */}
+            <a 
+              href="thaid://"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                padding: '12px 20px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid #1e40af',
+                background: 'transparent',
+                color: '#1e40af',
+                textDecoration: 'none',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '600',
+                transition: 'all 0.3s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#f0f5ff';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              <span>หากแอปไม่เปิดอัตโนมัติ คลิกที่นี่เพื่อเปิดแอป ThaiD</span>
+            </a>
+
             
             <p style={{
               fontSize: '11px',
