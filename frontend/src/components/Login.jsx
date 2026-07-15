@@ -43,23 +43,10 @@ export default function Login() {
     const isChrome = /Chrome|CriOS/i.test(navigator.userAgent) && !/WebView|Version/i.test(navigator.userAgent);
 
     if (isChrome) {
-      // 1. ถ้าเป็น Chrome ให้พยายามปลุกแอป ThaiD ในเครื่องทันที
-      try {
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        iframe.src = 'thaid://';
-        document.body.appendChild(iframe);
-        setTimeout(() => {
-          document.body.removeChild(iframe);
-        }, 300);
-      } catch (e) {
-        console.warn('Failed to call thaid:// from Chrome', e);
-      }
-
-      // 2. นำทางหน้าเว็บไปยังระบบตรวจสอบสิทธิ์ของ DOPA
-      setTimeout(() => {
-        window.location.href = thaidAuthUrl;
-      }, 50);
+      // 1. ถ้าเป็น Chrome ให้เรียกใช้ Intent Scheme โดยระบุ Package identity ของแอป ThaiD โดยตรง
+      // และใส่ fallback URL เป็นตัวเว็บ เพื่อให้ตัวระบบ Android ทราบว่าต้องเปิดเข้าแอป D-ID เป็นอันดับแรก
+      const intentUrl = `intent://imauth.bora.dopa.go.th/api/v2/oauth2/auth/?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(JSON.stringify(stateObj))}#Intent;scheme=https;package=th.go.dopa.bora.identity;S.browser_fallback_url=${encodeURIComponent(thaidAuthUrl)};end;`;
+      window.location.href = intentUrl;
     } else if (isAndroid) {
       // สำหรับ Android Browser อื่นๆ ที่อยู่ใน Sandbox Webview ให้ใช้ Intent บังคับออกไป Browser หลัก
       const intentUrl = `intent://imauth.bora.dopa.go.th/api/v2/oauth2/auth/?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(JSON.stringify(stateObj))}#Intent;scheme=https;end;`;
