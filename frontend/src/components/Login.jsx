@@ -37,15 +37,35 @@ export default function Login() {
 
     // ตรวจสอบว่าเป็น Android หรือไม่
     const isAndroid = /Android/i.test(navigator.userAgent);
+    
+    // ตรวจสอบว่าเป็น Google Chrome หรือไม่ (ทั้ง iOS และ Android)
+    // CriOS = Chrome on iOS, Chrome = Chrome on Android/Desktop
+    const isChrome = /Chrome|CriOS/i.test(navigator.userAgent) && !/WebView|Version/i.test(navigator.userAgent);
 
-    if (isAndroid) {
-      // ใช้ Android Intent Scheme เพื่อบังคับให้ระบบเปิดลิงก์ imauth บน Browser หลักของเครื่อง (เช่น Chrome)
-      // แทนการเปิดใน Sandboxed Webview (ซึ่งบล็อกการสลับหน้าแอป)
-      // เมื่อลิงก์เปิดบน Chrome หลักแล้ว จะสลับไปเปิดแอป ThaiD ได้อย่างราบรื่น
+    if (isChrome) {
+      // 1. ถ้าเป็น Chrome ให้พยายามปลุกแอป ThaiD ในเครื่องทันที
+      try {
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = 'thaid://';
+        document.body.appendChild(iframe);
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+        }, 300);
+      } catch (e) {
+        console.warn('Failed to call thaid:// from Chrome', e);
+      }
+
+      // 2. นำทางหน้าเว็บไปยังระบบตรวจสอบสิทธิ์ของ DOPA
+      setTimeout(() => {
+        window.location.href = thaidAuthUrl;
+      }, 50);
+    } else if (isAndroid) {
+      // สำหรับ Android Browser อื่นๆ ที่อยู่ใน Sandbox Webview ให้ใช้ Intent บังคับออกไป Browser หลัก
       const intentUrl = `intent://imauth.bora.dopa.go.th/api/v2/oauth2/auth/?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(JSON.stringify(stateObj))}#Intent;scheme=https;end;`;
       window.location.href = intentUrl;
     } else {
-      // 1. สำหรับ iOS/อื่นๆ ปลุกแอปด้วย thaid://
+      // สำหรับ iOS / อื่นๆ
       try {
         const iframe = document.createElement('iframe');
         iframe.style.display = 'none';
@@ -58,7 +78,6 @@ export default function Login() {
         console.warn('Failed to call deep link', e);
       }
 
-      // 2. นำหน้าจอหลักเบราว์เซอร์ไปที่ DOPA
       setTimeout(() => {
         window.location.href = thaidAuthUrl;
       }, 100);
