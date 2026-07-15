@@ -5,8 +5,24 @@ export default function Login() {
   const error = params.get('error')
 
   const handleLogin = () => {
-    // Using relative path to work on both local and Ubuntu
-    window.location.href = '/api/auth/login' + window.location.search
+    // FortiGate ส่ง params มาเป็น: ?magic=xxx&original_url=xxx&auth_url=xxx
+    // ต้อง normalize ให้ backend อ่านได้ถูกต้อง
+    const magic      = params.get('magic') || ''
+    const originalUrl = params.get('original_url') || params.get('url') || ''
+    const authUrl    = params.get('auth_url') || ''
+    const mac        = params.get('mac') || params.get('client_mac') || ''
+    const ip         = params.get('ip') || params.get('client_ip') || ''
+    const fwIp       = params.get('fw_ip') || ''
+
+    const loginParams = new URLSearchParams()
+    if (magic)       loginParams.set('magic', magic)
+    if (originalUrl) loginParams.set('url', originalUrl)
+    if (authUrl)     loginParams.set('auth_url', authUrl)
+    if (mac)         loginParams.set('mac', mac)
+    if (ip)          loginParams.set('ip', ip)
+    if (fwIp)        loginParams.set('fw_ip', fwIp)
+
+    window.location.href = '/api/auth/login?' + loginParams.toString()
   }
 
   return (

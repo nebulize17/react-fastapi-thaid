@@ -373,6 +373,7 @@ async def login(
         "originalUrl": url or "",
         "magic": magic or "",
         "fw_ip": fw_ip or FORTIGATE_IP or "",
+        "auth_url": auth_url or "",
         "qr_session": qr_session or "",
     })
 
@@ -503,6 +504,7 @@ async def auth_callback(request: Request, response: Response):
                 "original_url": state_captive.get("originalUrl") or request.session.get('original_url', ""),
                 "magic": state_captive.get("magic") or request.session.get('fortigate_magic', ""),
                 "fw_ip": state_captive.get("fw_ip") or request.session.get('fortigate_ip', FORTIGATE_IP) or FORTIGATE_IP,
+                "auth_url": state_captive.get("auth_url") or request.session.get('auth_url', ""),
             }
 
             # ตรวจสอบ qr_session จาก state ก่อน session cookie
@@ -696,12 +698,18 @@ async def auth_callback(request: Request, response: Response):
         logger.info("Processing standard Redirect Flow callback HTML generator")
         
         user_info_json = json.dumps(user_info, ensure_ascii=False)
-        magic = captive_data.get("magic", "")
-        ip = captive_data.get("ip", "")
-        mac = captive_data.get("mac", "")
-        fw_ip = captive_data.get("fw_ip", FORTIGATE_IP)
+        magic      = captive_data.get("magic", "")
+        ip         = captive_data.get("ip", "")
+        mac        = captive_data.get("mac", "")
+        fw_ip      = captive_data.get("fw_ip", FORTIGATE_IP)
         original_url = captive_data.get("original_url", "")
-        
+        # ใช้ auth_url จาก FortiGate (%%AUTH_POST_URL%%) ถ้ามี
+        # มิฉะนั้น fallback ไป IP:port จาก config
+        auth_url_from_fg = captive_data.get("auth_url", "")
+        form_action = auth_url_from_fg if auth_url_from_fg else f"https://{fw_ip}:{FORTIGATE_AUTH_PORT}{FORTIGATE_AUTH_PATH}"
+
+        logger.info(f"Standard flow HTML: magic={'SET' if magic else 'EMPTY'}, form_action={form_action}, ip={ip}")
+
         standard_html_content = f"""<!DOCTYPE html>
 <html lang="th">
 <head>
@@ -733,35 +741,39 @@ async def auth_callback(request: Request, response: Response):
   <script>
     window.onload = function() {{
       try {{
-        // 1. บันทึกข้อมูล captive_params ลง localStorage
         const captiveData = {{
           mac: {json.dumps(mac)},
           ip: {json.dumps(ip)},
           url: {json.dumps(original_url)},
           magic: {json.dumps(magic)},
-          fw_ip: {json.dumps(fw_ip)}
+          fw_ip: {json.dumps(fw_ip)},
+          auth_url: {json.dumps(auth_url_from_fg)}
         }};
         localStorage.setItem('captive_params', JSON.stringify(captiveData));
 
-        // 2. บันทึกข้อมูล thaid_success_data ลง localStorage
         const successData = {{
           user_info: {user_info_json},
           username: {json.dumps(username)},
           password: {json.dumps(password)},
           fw_ip: {json.dumps(fw_ip)},
           fw_port: "{FORTIGATE_AUTH_PORT}",
-          fw_path: "{FORTIGATE_AUTH_PATH}"
+          fw_path: "{FORTIGATE_AUTH_PATH}",
+          auth_url: {json.dumps(auth_url_from_fg)}
         }};
         localStorage.setItem('thaid_success_data', JSON.stringify(successData));
-        
-        // 3. ยิง Submit ไปยัง FortiGate ผ่าน iframe
+
+        // Submit FortiGate auth form
         const form = document.getElementById('auth_form');
-        form.submit();
-        
-        // 4. นำทางหน้าต่างหลักไปยัง /keepalive ในอีก 1 วินาทีถัดไป
+        if (form && {json.dumps(bool(magic))}) {{
+          console.log('[ThaiD] Submitting FortiGate auth form to:', form.action);
+          form.submit();
+        }} else {{
+          console.warn('[ThaiD] magic is empty — skipping form submit');
+        }}
+
         setTimeout(function() {{
           window.location.href = '/keepalive';
-        }}, 1000);
+        }}, 1500);
       }} catch (err) {{
         console.error('Error in callback script:', err);
         window.location.href = '/keepalive';
@@ -771,8 +783,8 @@ async def auth_callback(request: Request, response: Response):
 </head>
 <body>
   <iframe id="auth_iframe" name="auth_iframe" style="display: none;"></iframe>
-  
-  <form id="auth_form" method="POST" action="https://{FORTIGATE_IP}:1442/fgtauth" target="auth_iframe" style="display: none;">
+
+  <form id="auth_form" method="POST" action="{form_action}" target="auth_iframe" style="display: none;">
     <input type="hidden" name="magic" value="{magic}" />
     <input type="hidden" name="username" value="{username}" />
     <input type="hidden" name="password" value="{password}" />
