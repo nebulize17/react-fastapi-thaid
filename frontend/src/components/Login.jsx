@@ -118,6 +118,7 @@ export default function Login() {
           )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* ปุ่มหลัก: บังคับเปิดแอป ThaiD บนเครื่อง (Mobile/Tablet App-to-App) */}
             <button 
               onClick={handleLogin}
               style={{
@@ -127,21 +128,20 @@ export default function Login() {
                 gap: '16px',
                 padding: '16px 24px',
                 borderRadius: 'var(--radius-sm)',
-                border: '2px solid var(--border)',
-                background: 'white',
+                border: '2px solid var(--primary)',
+                background: 'var(--primary)',
+                color: 'white',
                 cursor: 'pointer',
                 transition: 'all 0.3s ease',
-                boxShadow: 'var(--shadow-sm)',
+                boxShadow: 'var(--shadow-md)',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = 'var(--primary)';
-                e.currentTarget.style.boxShadow = 'var(--shadow-md)';
                 e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.filter = 'brightness(1.1)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = 'var(--border)';
-                e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
                 e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.filter = 'none';
               }}
             >
               <img 
@@ -152,11 +152,11 @@ export default function Login() {
                   height: '36px',
                   borderRadius: '50%',
                   objectFit: 'contain',
-                  border: '1px solid #f0f0f0'
+                  border: '2px solid white'
                 }} 
               />
-              <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--primary)' }}>
-                เข้าสู่ระบบด้วย ThaiD
+              <span style={{ fontSize: '18px', fontWeight: '700' }}>
+                เปิดแอปพลิเคชัน ThaiD เพื่อยืนยันตัวตน
               </span>
               <svg 
                 xmlns="http://www.w3.org/2000/svg" 
@@ -164,7 +164,7 @@ export default function Login() {
                 fill="none" 
                 stroke="currentColor" 
                 strokeWidth={2.5} 
-                style={{ width: '20px', height: '20px', marginLeft: 'auto', color: 'var(--text-light)' }}
+                style={{ width: '20px', height: '20px', marginLeft: 'auto', color: 'white' }}
               >
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
