@@ -42,29 +42,9 @@ export default function Login() {
     // CriOS = Chrome on iOS, Chrome = Chrome on Android/Desktop
     const isChrome = /Chrome|CriOS/i.test(navigator.userAgent) && !/WebView|Version/i.test(navigator.userAgent);
 
-    if (isAndroid) {
-      // สำหรับ Android ทุกเบราว์เซอร์: บังคับส่ง URL ไปที่โปรโตคอลเปิดแอปโดยตรงผ่าน Intent ที่ถูกต้อง
-      // โดยชี้ package ไปที่ th.go.dopa.bora.identity และส่ง action ด้วย View intent
-      const intentUrl = `intent://imauth.bora.dopa.go.th/api/v2/oauth2/auth/?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(JSON.stringify(stateObj))}#Intent;scheme=https;package=th.go.dopa.bora.identity;action=android.intent.action.VIEW;end;`;
-      window.location.href = intentUrl;
-    } else {
-      // สำหรับ iOS / อื่นๆ
-      try {
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        iframe.src = 'thaid://';
-        document.body.appendChild(iframe);
-        setTimeout(() => {
-          document.body.removeChild(iframe);
-        }, 500);
-      } catch (e) {
-        console.warn('Failed to call deep link', e);
-      }
-
-      setTimeout(() => {
-        window.location.href = thaidAuthUrl;
-      }, 100);
-    }
+    // ทำการนำทางไปยังหน้าจอ DOPA สำหรับตรวจสิทธิ์โดยตรงด้วยลิงก์ HTTPS มาตรฐาน
+    // เพื่อความเสถียรและป้องกันเบราว์เซอร์บล็อก URL Scheme
+    window.location.href = thaidAuthUrl;
   }
 
   return (
