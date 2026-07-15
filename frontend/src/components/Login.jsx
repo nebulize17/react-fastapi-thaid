@@ -39,9 +39,10 @@ export default function Login() {
     const isAndroid = /Android/i.test(navigator.userAgent);
 
     if (isAndroid) {
-      // ใช้ Android Intent Scheme เพื่อเปิดแอป ThaiD (D.ID) โดยตรง
-      // Package Name ที่ถูกต้องคือ th.go.dopa.bora.identity
-      const intentUrl = `intent://imauth.bora.dopa.go.th/api/v2/oauth2/auth/?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(JSON.stringify(stateObj))}#Intent;scheme=https;package=th.go.dopa.bora.identity;end;`;
+      // ใช้ Android Intent Scheme เพื่อบังคับให้ระบบเปิดลิงก์ imauth บน Browser หลักของเครื่อง (เช่น Chrome)
+      // แทนการเปิดใน Sandboxed Webview (ซึ่งบล็อกการสลับหน้าแอป)
+      // เมื่อลิงก์เปิดบน Chrome หลักแล้ว จะสลับไปเปิดแอป ThaiD ได้อย่างราบรื่น
+      const intentUrl = `intent://imauth.bora.dopa.go.th/api/v2/oauth2/auth/?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(JSON.stringify(stateObj))}#Intent;scheme=https;end;`;
       window.location.href = intentUrl;
     } else {
       // 1. สำหรับ iOS/อื่นๆ ปลุกแอปด้วย thaid://
