@@ -51,7 +51,7 @@ function buildThaiDUrl(captiveParams) {
     '?response_type=code' +
     '&client_id=' + encodeURIComponent(clientId) +
     '&redirect_uri=' + encodeURIComponent(callbackEndpoint) +
-    '&scope=openid%20pid' +
+    '&scope=openid%20pid%20name%20name_en%20given_name_en%20family_name_en%20title%20title_en' +
     '&state=' + encodeURIComponent(state)
   )
 }
