@@ -1,95 +1,16 @@
-import React, { useState } from 'react'
+import React from 'react'
 
 export default function Login() {
   const params = new URLSearchParams(window.location.search)
   const error = params.get('error')
-  const [showCnaWarning, setShowCnaWarning] = useState(false)
-
-  const proceedToLogin = () => {
-    const magic = params.get('magic') || ''
-    const originalUrl = params.get('original_url') || params.get('url') || ''
-    const authUrl = params.get('auth_url') || ''
-    const mac = params.get('mac') || params.get('client_mac') || ''
-    const ip = params.get('ip') || params.get('client_ip') || ''
-    const fwIp = params.get('fw_ip') || ''
-
-    // จัดเตรียม state สำหรับส่งไปพร้อมกับ oauth callback
-    const stateObj = {
-      mac: mac,
-      ip: ip,
-      originalUrl: originalUrl,
-      magic: magic,
-      fw_ip: fwIp,
-      auth_url: authUrl,
-      qr_session: ''
-    }
-
-    // ข้อมูลสำหรับเชื่อมต่อ ThaiD (ต้องตรงกับฝั่ง Backend ใน .env)
-    const clientId = 'cTFDQlVxVHFBWWVaT3hDckprZ3R4aDdvakk4c21mZ1o' // THAID_CLIENT_ID
-    const redirectUri = 'https://api-gateway.dtam.moph.go.th/api/auth/callback' // THAID_CALLBACK_ENDPOINT
-    const scopes = 'openid pid title title_en given_name_en family_name_en name name_en'
-
-    const thaidAuthUrl = 'https://imauth.bora.dopa.go.th/api/v2/oauth2/auth/' +
-      '?response_type=code' +
-      '&client_id=' + encodeURIComponent(clientId) +
-      '&redirect_uri=' + encodeURIComponent(redirectUri) +
-      '&scope=' + encodeURIComponent(scopes) +
-      '&state=' + encodeURIComponent(JSON.stringify(stateObj))
-
-<<<<<<< HEAD
-    // ทำการนำทางไปยังหน้าจอ DOPA สำหรับตรวจสิทธิ์โดยตรงด้วยลิงก์ HTTPS มาตรฐาน
-    // เพื่อความเสถียรและป้องกันเบราว์เซอร์บล็อก URL Scheme
-    window.location.href = thaidAuthUrl;
-  }
 
   const handleLogin = () => {
-    const ua = navigator.userAgent
-    const isIOS = /iPhone|iPad|iPod/i.test(ua)
-    const isAndroid = /Android/i.test(ua)
-    const isSafari = /Safari/i.test(ua)
-    const isChrome = /Chrome/i.test(ua)
-    
-    // Detect Captive Network Assistant (CNA) / WebView in OS
-    const isCna = (isIOS && !isSafari) || (isAndroid && (ua.includes('wv') || !isChrome))
-
-    if (isCna) {
-      setShowCnaWarning(true)
-    } else {
-      proceedToLogin()
-=======
-    // ตรวจสอบว่าเป็น Android หรือไม่
-    const isAndroid = /Android/i.test(navigator.userAgent);
-
-    if (isAndroid) {
-      // ใช้ Android Intent Scheme เพื่อบังคับให้ระบบเปิดลิงก์ imauth บน Browser หลักของเครื่อง (เช่น Chrome)
-      // แทนการเปิดใน Sandboxed Webview (ซึ่งบล็อกการสลับหน้าแอป)
-      // เมื่อลิงก์เปิดบน Chrome หลักแล้ว จะสลับไปเปิดแอป ThaiD ได้อย่างราบรื่น
-      const intentUrl = `intent://imauth.bora.dopa.go.th/api/v2/oauth2/auth/?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(JSON.stringify(stateObj))}#Intent;scheme=https;end;`;
-      window.location.href = intentUrl;
-    } else {
-      // 1. สำหรับ iOS/อื่นๆ ปลุกแอปด้วย thaid://
-      try {
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        iframe.src = 'thaid://';
-        document.body.appendChild(iframe);
-        setTimeout(() => {
-          document.body.removeChild(iframe);
-        }, 500);
-      } catch (e) {
-        console.warn('Failed to call deep link', e);
-      }
-
-      // 2. นำหน้าจอหลักเบราว์เซอร์ไปที่ DOPA
-      setTimeout(() => {
-        window.location.href = thaidAuthUrl;
-      }, 100);
->>>>>>> parent of 63581b0 (Update Login.jsx)
-    }
+    // Using relative path to work on both local and Ubuntu
+    window.location.href = '/api/auth/login' + window.location.search
   }
 
   return (
-    <div className="portal-root" style={{ position: 'relative' }}>
+    <div className="portal-root">
       <div className="portal-card">
         {/* Header */}
         <div className="portal-header">
@@ -202,8 +123,7 @@ export default function Login() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
             </button>
-
-
+            
             <p style={{
               fontSize: '11px',
               color: 'var(--text-light)',
@@ -222,112 +142,6 @@ export default function Login() {
           &copy; {new Date().getFullYear()} กรมการแพทย์แผนไทยและการแพทย์ทางเลือก
         </div>
       </div>
-
-      {/* CNA Warning Modal Overlay */}
-      {showCnaWarning && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(15, 58, 108, 0.4)',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999,
-          padding: '20px'
-        }}>
-          <div style={{
-            background: 'white',
-            borderRadius: '16px',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.15)',
-            borderTop: '5px solid #dc2626',
-            width: '100%',
-            maxWidth: '440px',
-            padding: '28px',
-            animation: 'slideUp 0.3s cubic-bezier(0.16,1,0.3,1) both'
-          }}>
-            <h2 style={{ fontSize: '20px', fontWeight: '800', color: '#dc2626', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              ⚠️ ตรวจพบข้อจำกัดของป๊อปอัป Wi-Fi
-            </h2>
-            <p style={{ fontSize: '14px', color: '#4b5563', lineHeight: '1.6', marginBottom: '16px', textAlign: 'left' }}>
-              คุณกำลังเชื่อมต่อ Wi-Fi และเปิดหน้านี้ผ่านหน้าต่างป๊อปอัปอัตโนมัติของมือถือ (CNA) 
-              ซึ่งระบบความปลอดภัยของมือถือจะ<strong>บล็อกการสลับหน้าจอไปเปิดแอป ThaID</strong>
-            </p>
-            
-            <div style={{ 
-              background: '#f9fafb', 
-              border: '1px solid #e5e7eb', 
-              borderRadius: '8px', 
-              padding: '16px', 
-              textAlign: 'left', 
-              marginBottom: '20px',
-              fontSize: '14px',
-              lineHeight: '1.7'
-            }}>
-              <strong style={{ color: 'var(--primary)', display: 'block', marginBottom: '8px' }}>🛠️ วิธีแก้ไขเพื่อให้เปิดแอป ThaID ได้:</strong>
-              <ol style={{ paddingLeft: '20px', margin: 0, color: '#374151' }}>
-                <li style={{ marginBottom: '6px' }}>
-                  กดปุ่ม <strong>"ยกเลิก" (Cancel)</strong> หรือปิดหน้าต่างป๊อปอัปนี้ที่มุมบนขวาหรือซ้าย
-                </li>
-                <li style={{ marginBottom: '6px' }}>
-                  เลือกหัวข้อ <strong>"ใช้โดยไม่มีอินเทอร์เน็ต" (Keep Connection / Use Without Internet)</strong>
-                </li>
-                <li style={{ marginBottom: '6px' }}>
-                  เปิดแอป <strong>Safari</strong> (บน iOS) หรือ <strong>Chrome</strong> (บน Android)
-                </li>
-                <li>
-                  พิมพ์ค้นหาเว็บ <strong>neverssl.com</strong> หรือไอพี <strong>1.1.1.1</strong> เพื่อกลับมาหน้าล็อกอินนี้ แล้วจะสามารถเปิดแอป <strong>ThaID</strong> ได้ตามปกติ
-                </li>
-              </ol>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <button
-                onClick={() => setShowCnaWarning(false)}
-                style={{
-                  padding: '12px 20px',
-                  background: 'var(--primary)',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: 'var(--radius-sm)',
-                  fontWeight: '700',
-                  fontSize: '14px',
-                  cursor: 'pointer',
-                  transition: 'opacity 0.2s'
-                }}
-                onMouseEnter={e => e.currentTarget.style.opacity = 0.9}
-                onMouseLeave={e => e.currentTarget.style.opacity = 1}
-              >
-                เข้าใจแล้ว (ปิดหน้าต่างนี้)
-              </button>
-              
-              <button
-                onClick={() => {
-                  setShowCnaWarning(false)
-                  proceedToLogin()
-                }}
-                style={{
-                  padding: '12px 20px',
-                  background: 'transparent',
-                  color: '#6b7280',
-                  border: 'none',
-                  borderRadius: 'var(--radius-sm)',
-                  fontWeight: '500',
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  textDecoration: 'underline'
-                }}
-              >
-                ดำเนินการล็อกอินต่ออย่างไรก็ดี
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
