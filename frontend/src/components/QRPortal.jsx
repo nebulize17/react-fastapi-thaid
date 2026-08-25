@@ -138,7 +138,7 @@ function CountdownRing({ total, remaining }) {
 // ============================================================
 // FortiGate Auto-Submit Form (After Auth Success)
 // ============================================================
-function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, username, password, onSubmitted }) {
+function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, username, password, redir, onSubmitted }) {
   const formRef = useRef(null)
   
   useEffect(() => {
@@ -146,17 +146,13 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
       if (magic && formRef.current) {
         // ยิง Auto-Submit ไปที่ FortiGate พร้อม User/Pass
         formRef.current.submit();
-        if (onSubmitted) {
-          // หน่วงเวลาเล็กน้อยเพื่อให้ฟอร์ม submit สำเร็จก่อนเปลี่ยนหน้า
-          setTimeout(onSubmitted, 1000);
-        }
       } else {
         // ถ้าไม่มีค่า magic (เปิดเว็บมาทดสอบตรงๆ) ให้เด้งไป Google เลย
         window.location.href = 'https://www.google.com';
       }
     }, 1500) // รอ 1.5 วินาทีให้ user เห็นหน้า Success ก่อน
     return () => clearTimeout(timer);
-  }, [magic, onSubmitted])
+  }, [magic])
 
   if (!magic) return null
 
@@ -165,20 +161,17 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
   const postTarget = authUrl || `https://${targetIp}:1442/fgtauth`;
 
   return (
-    <>
-      <iframe name="auth_iframe" id="auth_iframe" style={{ display: 'none' }} />
-      <form
-        ref={formRef}
-        method="POST"
-        action={postTarget}
-        target="auth_iframe"
-        style={{ display: 'none' }}
-      >
-        <input type="hidden" name="magic" value={magic} />
-        <input type="hidden" name="username" value={username || "thanphichetwi"} />
-        <input type="hidden" name="password" value={password || "Benz1711"} />
-      </form>
-    </>
+    <form
+      ref={formRef}
+      method="POST"
+      action={postTarget}
+      style={{ display: 'none' }}
+    >
+      <input type="hidden" name="magic" value={magic} />
+      <input type="hidden" name="username" value={username || "thanphichetwi"} />
+      <input type="hidden" name="password" value={password || "Benz1711"} />
+      <input type="hidden" name="redir" value={redir || ""} />
+    </form>
   )
 }
 
@@ -451,6 +444,7 @@ export default function QRPortal({ keepaliveOnly }) {
             authUrl={successData.auth_url}
             username={successData.username}
             password={successData.password}
+            redir={captiveParams.url}
             onSubmitted={() => setPhase('keepalive')}
           />
           <div className="portal-card success-card">

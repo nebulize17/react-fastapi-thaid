@@ -698,34 +698,27 @@ async def auth_callback(request: Request, response: Response):
         }};
         localStorage.setItem('thaid_success_data', JSON.stringify(successData));
         
-        // 3. ยิง Submit ไปยัง FortiGate ผ่าน iframe
+        // 3. ยิง Submit ไปยัง FortiGate โดยตรงผ่านหน้าต่างหลัก (Top-level)
         const form = document.getElementById('auth_form');
         form.submit();
-        
-        // 4. นำทางหน้าต่างหลักไปยัง /keepalive ในอีก 1 วินาทีถัดไป
-        setTimeout(function() {{
-          window.location.href = '/keepalive';
-        }}, 1000);
-      }} catch (err) {{
+      } catch (err) {
         console.error('Error in callback script:', err);
-        window.location.href = '/keepalive';
-      }}
-    }};
+      }
+    };
   </script>
 </head>
 <body>
-  <iframe id="auth_iframe" name="auth_iframe" style="display: none;"></iframe>
-  
-  <form id="auth_form" method="POST" action="{post_target}" target="auth_iframe" style="display: none;">
+  <form id="auth_form" method="POST" action="{post_target}" style="display: none;">
     <input type="hidden" name="magic" value="{magic}" />
     <input type="hidden" name="username" value="{username}" />
     <input type="hidden" name="password" value="{password}" />
+    <input type="hidden" name="redir" value="{original_url}" />
   </form>
 
   <div class="card">
     <div class="spinner"></div>
     <h1>กำลังเชื่อมต่ออินเทอร์เน็ต</h1>
-    <p>ระบบตรวจสอบสิทธิ์สำเร็จแล้ว กำลังเชื่อมต่ออินเทอร์เน็ตและนำท่านไปยังหน้าระบบควบคุมการใช้งาน...</p>
+    <p>ระบบตรวจสอบสิทธิ์สำเร็จแล้ว กำลังนำท่านเข้าสู่เครือข่ายอินเทอร์เน็ต...</p>
   </div>
 </body>
 </html>"""
