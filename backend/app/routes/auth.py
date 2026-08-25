@@ -219,6 +219,7 @@ async def create_qr_session(
     mac: str = None,
     ip: str = None,
     url: str = None,
+    original_url: str = None,
     magic: str = None,
     fw_ip: str = None,
     auth_url: str = None,
@@ -237,6 +238,7 @@ async def create_qr_session(
     # Captive portal params จาก FortiGate query string
     # FortiGate ส่ง: ?magic=XXXX&type=fw&user=&ip=CLIENT_IP&mac=CLIENT_MAC&url=ORIGINAL_URL
     effective_fw_ip = fw_ip or FORTIGATE_IP
+    effective_url = url or original_url
 
     # State payload ที่จะส่งไปกับ ThaiD OAuth และจะกลับมาใน callback
     # บันทึก session — เก็บ captive portal params ทั้งหมดไว้ใน store
@@ -253,7 +255,7 @@ async def create_qr_session(
         "status": "pending",
         "mac": mac or "",
         "ip": client_ip,
-        "original_url": url or "",
+        "original_url": effective_url or "",
         "magic": magic or "",
         "fw_ip": effective_fw_ip,
         "auth_url": auth_url or "",
@@ -334,6 +336,7 @@ async def login(
     mac: str = None,
     ip: str = None,
     url: str = None,
+    original_url: str = None,
     magic: str = None,
     fw_ip: str = None,
     auth_url: str = None,
@@ -350,9 +353,11 @@ async def login(
         else:
             real_ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
 
+    effective_url = url or original_url
+
     if mac: request.session['guest_mac'] = mac
     request.session['guest_ip'] = real_ip
-    if url: request.session['original_url'] = url
+    if effective_url: request.session['original_url'] = effective_url
     if magic: request.session['fortigate_magic'] = magic
     if fw_ip: request.session['fortigate_ip'] = fw_ip
     if auth_url: request.session['auth_url'] = auth_url
