@@ -219,7 +219,6 @@ async def create_qr_session(
     mac: str = None,
     ip: str = None,
     url: str = None,
-    original_url: str = None,
     magic: str = None,
     fw_ip: str = None,
     auth_url: str = None,
@@ -238,7 +237,6 @@ async def create_qr_session(
     # Captive portal params จาก FortiGate query string
     # FortiGate ส่ง: ?magic=XXXX&type=fw&user=&ip=CLIENT_IP&mac=CLIENT_MAC&url=ORIGINAL_URL
     effective_fw_ip = fw_ip or FORTIGATE_IP
-    effective_url = url or original_url
 
     # State payload ที่จะส่งไปกับ ThaiD OAuth และจะกลับมาใน callback
     # บันทึก session — เก็บ captive portal params ทั้งหมดไว้ใน store
@@ -255,7 +253,7 @@ async def create_qr_session(
         "status": "pending",
         "mac": mac or "",
         "ip": client_ip,
-        "original_url": effective_url or "",
+        "original_url": url or "",
         "magic": magic or "",
         "fw_ip": effective_fw_ip,
         "auth_url": auth_url or "",
@@ -336,7 +334,6 @@ async def login(
     mac: str = None,
     ip: str = None,
     url: str = None,
-    original_url: str = None,
     magic: str = None,
     fw_ip: str = None,
     auth_url: str = None,
@@ -353,11 +350,9 @@ async def login(
         else:
             real_ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
 
-    effective_url = url or original_url
-
     if mac: request.session['guest_mac'] = mac
     request.session['guest_ip'] = real_ip
-    if effective_url: request.session['original_url'] = effective_url
+    if url: request.session['original_url'] = url
     if magic: request.session['fortigate_magic'] = magic
     if fw_ip: request.session['fortigate_ip'] = fw_ip
     if auth_url: request.session['auth_url'] = auth_url
@@ -483,13 +478,13 @@ async def auth_callback(request: Request, response: Response):
                 logger.error("No userinfo found in token.")
                 return RedirectResponse(url=f"{FRONTEND_URL}/?error=no_userinfo")
 
+            # ดึงข้อมูลจาก session
             captive_data = {
                 "mac": request.session.get('guest_mac', ""),
                 "ip": request.session.get('guest_ip', ""),
                 "original_url": request.session.get('original_url', ""),
                 "magic": request.session.get('fortigate_magic', ""),
                 "fw_ip": request.session.get('fortigate_ip', FORTIGATE_IP),
-                "auth_url": request.session.get('auth_url', ""),
             }
         except Exception as e:
             logger.error(f"Authlib Callback Error: {str(e)}")
@@ -519,7 +514,7 @@ async def auth_callback(request: Request, response: Response):
     # กำหนด password เริ่มต้น
     password = username
 
-    # ดึงค่ารหัสผ่านจริงจาก ClearPass Guest Database หากมีผู้ใช้นี้อยู่แล้ว เพื่อแก้ปัญหารหัสผ่านไม่ตรงกัน
+    # ตรวจสอบว่ามีบัญชีนี้อยู่ใน ClearPass Guest Database แล้วหรือไม่ (ห้ามสร้างออโต้ตามความต้องการผู้ใช้งาน)
     if CPPM_HOST and CPPM_CLIENT_ID:
         try:
             async with httpx.AsyncClient(verify=False) as client:
@@ -530,41 +525,72 @@ async def auth_callback(request: Request, response: Response):
                     "client_secret": CPPM_CLIENT_SECRET
                 }
                 token_res = await client.post(token_url, data=token_data, timeout=10)
-                if token_res.status_code == 200:
-                    access_token = token_res.json().get("access_token")
+                if token_res.status_code != 200:
+                    logger.error("Failed to get ClearPass access token.")
+                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_connection_failed")
+
+                access_token = token_res.json().get("access_token")
+                
+                # เช็คข้อมูลผู้เข้าใช้ในฐานข้อมูลเกสท์ของ ClearPass
+                user_url = f"https://{CPPM_HOST}/api/guest/username/{username}"
+                headers = {"Authorization": f"Bearer {access_token}"}
+                user_res = await client.get(user_url, headers=headers, timeout=10)
+                
+                if user_res.status_code == 200:
+                    user_data = user_res.json()
                     
-                    # เช็คข้อมูลผู้เข้าใช้ในฐานข้อมูลเกสท์ของ ClearPass
-                    user_url = f"https://{CPPM_HOST}/api/guest/username/{username}"
-                    headers = {"Authorization": f"Bearer {access_token}"}
-                    user_res = await client.get(user_url, headers=headers, timeout=10)
+                    # 1. Try to extract plain-text password from 'notes' field (stored during manual creation)
+                    notes = user_data.get("notes", "")
+                    db_password = None
+                    if "PWD:" in notes:
+                        db_password = notes.split("PWD:")[-1].strip()
+                        logger.info(f"Successfully extracted stored password from ClearPass notes for user '{username}'")
                     
-                    if user_res.status_code == 200:
-                        user_data = user_res.json()
-                        db_password = user_data.get("password") or user_data.get("cleartext_password")
+                    # 2. If not found in notes, update/PATCH the password in ClearPass dynamically to 'username'
+                    # so that RADIUS PAP authentication will succeed.
+                    if not db_password:
+                        logger.info(f"No password signature in notes for '{username}'. Dynamically updating ClearPass password to match username.")
+                        user_id = user_data.get("id")
+                        update_url = f"https://{CPPM_HOST}/api/guest/username/{username}"
+                        if user_id:
+                            update_url = f"https://{CPPM_HOST}/api/guest/{user_id}"
                         
-                        # ลองดึงจากฟิลด์ notes หากผู้ดูแลระบบใช้วิธีใส่ PWD:ไว้ตอนสร้างแบบ Manual
-                        notes = user_data.get("notes", "")
-                        if notes and "PWD:" in notes:
-                            db_password = notes.split("PWD:")[-1].strip()
-                            
-                        if db_password:
-                            password = db_password
-                            logger.info(f"Found existing ClearPass user '{username}'. Successfully pulled stored password from ClearPass Guest Database for login.")
-                    else:
-                        # หากยังไม่มีบัญชีเกสท์นี้ในระบบ ให้ทำการสร้างใหม่
-                        logger.info(f"User '{username}' not found in ClearPass. Creating new guest account.")
-                        await create_cppm_user(username, password, user_info)
+                        patch_payload = {"password": username}
+                        patch_headers = {
+                            "Authorization": f"Bearer {access_token}",
+                            "Content-Type": "application/json"
+                        }
+                        try:
+                            patch_res = await client.patch(update_url, json=patch_payload, headers=patch_headers, timeout=10)
+                            if patch_res.status_code in [200, 204]:
+                                db_password = username
+                                logger.info(f"Successfully updated ClearPass user '{username}' password to match username.")
+                            else:
+                                logger.error(f"Failed to patch ClearPass password: {patch_res.text}")
+                        except Exception as patch_err:
+                            logger.error(f"Exception during ClearPass password patch: {str(patch_err)}")
+                    
+                    # 3. Apply the final password
+                    password = db_password or username
+                    logger.info(f"Using password for FortiGate captive portal: {password}")
                 else:
-                    logger.error("Failed to get ClearPass access token. Creating CPPM user anyway.")
-                    await create_cppm_user(username, password, user_info)
+                    # ปฏิเสธการล็อกอิน! เนื่องจากไม่มีบัญชีนี้อยู่ในระบบเกสท์ (ห้ามสร้างอัตโนมัติ)
+                    logger.warning(f"Access Denied: User '{username}' was NOT pre-created by administrator in ClearPass Guest Database.")
+                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=user_not_pre_created")
         except Exception as e:
             logger.error(f"Error querying existing ClearPass user in auth_callback: {str(e)}")
-            await create_cppm_user(username, password, user_info)
+            return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_query_error")
     else:
-        logger.error("ClearPass settings missing on server. Creating CPPM user anyway.")
-        await create_cppm_user(username, password, user_info)
+        logger.error("ClearPass settings missing on server.")
+        return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_config_missing")
 
-
+    # Trigger FortiGate REST API Session Authentication in the background (Non-blocking)
+    client_ip = captive_data.get("ip")
+    if client_ip:
+        logger.info(f"Triggering background FortiGate REST API Auth task for username '{username}' and IP '{client_ip}'")
+        asyncio.create_task(authenticate_fortigate_api(username, client_ip))
+    else:
+        logger.warning(f"No client IP found for user '{username}'. Skipping FortiGate REST API Auth.")
 
     # ============================================================
     # QR Flow: อัปเดต Session Store → Frontend Polling จะเจอ
@@ -649,15 +675,6 @@ async def auth_callback(request: Request, response: Response):
         mac = captive_data.get("mac", "")
         fw_ip = captive_data.get("fw_ip", FORTIGATE_IP)
         original_url = captive_data.get("original_url", "")
-        auth_url = captive_data.get("auth_url", "")
-        if not auth_url or auth_url == "/":
-            post_target = f"https://{fw_ip}:1442/fgtauth"
-        else:
-            if not auth_url.startswith("http"):
-                clean_path = auth_url.lstrip("/")
-                post_target = f"https://{fw_ip}:1442/{clean_path}"
-            else:
-                post_target = auth_url
         
         standard_html_content = f"""<!DOCTYPE html>
 <html lang="th">
@@ -711,27 +728,34 @@ async def auth_callback(request: Request, response: Response):
         }};
         localStorage.setItem('thaid_success_data', JSON.stringify(successData));
         
-        // 3. ยิง Submit ไปยัง FortiGate โดยตรงผ่านหน้าต่างหลัก (Top-level)
+        // 3. ยิง Submit ไปยัง FortiGate ผ่าน iframe
         const form = document.getElementById('auth_form');
         form.submit();
+        
+        // 4. นำทางหน้าต่างหลักไปยัง /keepalive ในอีก 1 วินาทีถัดไป
+        setTimeout(function() {{
+          window.location.href = '/keepalive';
+        }}, 1000);
       }} catch (err) {{
         console.error('Error in callback script:', err);
+        window.location.href = '/keepalive';
       }}
     }};
   </script>
 </head>
 <body>
-  <form id="auth_form" method="POST" action="{post_target}" style="display: none;">
+  <iframe id="auth_iframe" name="auth_iframe" style="display: none;"></iframe>
+  
+  <form id="auth_form" method="POST" action="https://{FORTIGATE_IP}:1442/fgtauth" target="auth_iframe" style="display: none;">
     <input type="hidden" name="magic" value="{magic}" />
     <input type="hidden" name="username" value="{username}" />
     <input type="hidden" name="password" value="{password}" />
-    <input type="hidden" name="redir" value="{original_url}" />
   </form>
 
   <div class="card">
     <div class="spinner"></div>
     <h1>กำลังเชื่อมต่ออินเทอร์เน็ต</h1>
-    <p>ระบบตรวจสอบสิทธิ์สำเร็จแล้ว กำลังนำท่านเข้าสู่เครือข่ายอินเทอร์เน็ต...</p>
+    <p>ระบบตรวจสอบสิทธิ์สำเร็จแล้ว กำลังเชื่อมต่ออินเทอร์เน็ตและนำท่านไปยังหน้าระบบควบคุมการใช้งาน...</p>
   </div>
 </body>
 </html>"""
