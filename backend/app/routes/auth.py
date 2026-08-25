@@ -337,9 +337,11 @@ async def login(
     magic: str = None,
     fw_ip: str = None,
     auth_url: str = None,
-    qr_session: str = None,
+    qr_session: str = None,   # ← QR Flow: session_id จาก QR Code
 ):
     """Initiate the ThaID OAuth2 Login Flow. Supports Captive Portal parameters and QR session."""
+    # เก็บ captive portal params ใน HTTP session
+    # Extract client real IP (essential when behind Nginx in Docker)
     real_ip = ip
     if not real_ip:
         x_forwarded_for = request.headers.get("x-forwarded-for")
@@ -355,6 +357,7 @@ async def login(
     if fw_ip: request.session['fortigate_ip'] = fw_ip
     if auth_url: request.session['auth_url'] = auth_url
 
+    # เก็บ QR session_id ไว้ใน HTTP session เพื่อดึงใน callback
     if qr_session:
         request.session['qr_session_id'] = qr_session
         logger.info(f"QR Login initiated for session: {qr_session}")
@@ -363,18 +366,8 @@ async def login(
     if THAID_CALLBACK_ENDPOINT and THAID_CALLBACK_ENDPOINT.startswith("https://"):
         redirect_uri = redirect_uri.replace("http://", "https://", 1)
 
-    captive_state = json.dumps({
-        "mac": mac or "",
-        "ip": real_ip or "",
-        "originalUrl": url or "",
-        "magic": magic or "",
-        "fw_ip": fw_ip or FORTIGATE_IP or "",
-        "auth_url": auth_url or "",
-        "qr_session": qr_session or "",
-    })
-
-    logger.info(f"Initiating login with redirect_uri: {redirect_uri}, captive_state: {captive_state}")
-    return await oauth.thaid.authorize_redirect(request, redirect_uri, state=captive_state)
+    logger.info(f"Initiating login with redirect_uri: {redirect_uri}")
+    return await oauth.thaid.authorize_redirect(request, redirect_uri)
 
 
 # ============================================================
@@ -385,7 +378,10 @@ async def login(
 async def auth_callback(request: Request, response: Response):
     """
     Handle the callback after successful ThaID login.
-    รองรับทั้ง QR Flow (state มี session_id คีย์ตรงกับ qr_sessions) และ redirect flow (ใช้ session cookie)
+    รองรับ 3 flows:
+    1. QR Flow        : state ตรงกับ qr_sessions (desktop scan QR)
+    2. Mobile Direct  : state เป็น JSON payload (mobile เปิดแอปโดยตรง)
+    3. Standard Redirect : state เป็น UUID จาก OAuth session (เดิม)
     """
     code = request.query_params.get("code")
     state = request.query_params.get("state")
@@ -397,6 +393,20 @@ async def auth_callback(request: Request, response: Response):
     qr_sessions = request.app.state.qr_sessions
     is_qr_flow = state in qr_sessions
 
+    # ตรวจสอบว่า state เป็น JSON payload (Mobile Direct Flow)
+    mobile_state_data = None
+    if not is_qr_flow:
+        try:
+            decoded_state = state
+            # ThaiD ส่ง state กลับมาตามที่ส่งไป — ลอง parse เป็น JSON
+            mobile_state_data = json.loads(decoded_state)
+            if not isinstance(mobile_state_data, dict):
+                mobile_state_data = None
+        except (json.JSONDecodeError, TypeError):
+            mobile_state_data = None
+
+    is_mobile_direct_flow = (mobile_state_data is not None) and not is_qr_flow
+
     user_info = None
     qr_session_id = None
     captive_data = {}
@@ -406,8 +416,47 @@ async def auth_callback(request: Request, response: Response):
     if redirect_uri.startswith("http://") and "dtam.moph.go.th" in redirect_uri:
         redirect_uri = redirect_uri.replace("http://", "https://", 1)
 
+    # ─────────────────────────────────────────────────────────
+    # Helper: แลก code เป็น access_token + userinfo (shared)
+    # ─────────────────────────────────────────────────────────
+    async def exchange_code_for_userinfo(code: str, redirect_uri: str):
+        """แลก authorization code → access_token → userinfo"""
+        async with httpx.AsyncClient(verify=False) as client:
+            headers = {}
+            if THAID_API_KEY:
+                headers['x-api-key'] = THAID_API_KEY
+
+            token_url = "https://imauth.bora.dopa.go.th/api/v2/oauth2/token/"
+            token_data = {
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": THAID_CLIENT_ID,
+                "client_secret": THAID_CLIENT_SECRET
+            }
+            token_res = await client.post(token_url, data=token_data, headers=headers)
+            if token_res.status_code != 200:
+                raise ValueError(f"token_exchange_failed: {token_res.text}")
+
+            access_token = token_res.json().get("access_token")
+            if not access_token:
+                raise ValueError("no_access_token")
+
+            userinfo_url = "https://imauth.bora.dopa.go.th/api/v2/oauth2/userinfo/"
+            userinfo_headers = {"Authorization": f"Bearer {access_token}"}
+            if THAID_API_KEY:
+                userinfo_headers['x-api-key'] = THAID_API_KEY
+
+            userinfo_res = await client.get(userinfo_url, headers=userinfo_headers)
+            if userinfo_res.status_code != 200:
+                raise ValueError(f"userinfo_fetch_failed: {userinfo_res.text}")
+
+            return userinfo_res.json()
+
     if is_qr_flow:
-        # --- QR Flow: สแกนข้ามเครื่อง (มือถือ -> คอมพิวเตอร์) ---
+        # ─────────────────────────────────────────────────────
+        # Flow 1: QR Flow (Desktop สแกน QR → มือถือเปิดแอป)
+        # ─────────────────────────────────────────────────────
         qr_session_id = state
         sess = qr_sessions[state]
         captive_data = {
@@ -416,76 +465,54 @@ async def auth_callback(request: Request, response: Response):
             "original_url": sess.get("original_url", ""),
             "magic": sess.get("magic", ""),
             "fw_ip": sess.get("fw_ip", FORTIGATE_IP),
-            "auth_url": sess.get("auth_url", ""),
         }
         logger.info(f"Processing QR Flow callback for session: {qr_session_id}")
+        try:
+            user_info = await exchange_code_for_userinfo(code, redirect_uri)
+        except Exception as e:
+            logger.error(f"QR Flow token exchange error: {str(e)}")
+            import traceback; traceback.print_exc()
+            qr_sessions[state]["status"] = "error"
+            return RedirectResponse(url=f"{FRONTEND_URL}/?error=qr_exchange_failed&detail={str(e)}")
+
+    elif is_mobile_direct_flow:
+        # ─────────────────────────────────────────────────────
+        # Flow 2: Mobile Direct Flow (มือถือ → แอป ThaID โดยตรง)
+        # state เป็น JSON: {mac, ip, originalUrl, magic, fw_ip}
+        # ─────────────────────────────────────────────────────
+        logger.info(f"Processing Mobile Direct Flow callback. State data: {mobile_state_data}")
+
+        # Extract client IP จาก state หรือ headers
+        client_ip = mobile_state_data.get("ip", "")
+        if not client_ip:
+            x_forwarded_for = request.headers.get("x-forwarded-for")
+            if x_forwarded_for:
+                client_ip = x_forwarded_for.split(",")[0].strip()
+            else:
+                client_ip = request.headers.get("x-real-ip") or (
+                    request.client.host if request.client else ""
+                )
+
+        captive_data = {
+            "mac": mobile_state_data.get("mac", ""),
+            "ip": client_ip,
+            "original_url": mobile_state_data.get("originalUrl", ""),
+            "magic": mobile_state_data.get("magic", ""),
+            "fw_ip": mobile_state_data.get("fw_ip", FORTIGATE_IP) or FORTIGATE_IP,
+        }
 
         try:
-            async with httpx.AsyncClient(verify=False) as client:
-                headers = {}
-                if THAID_API_KEY:
-                    headers['x-api-key'] = THAID_API_KEY
-
-                # 1. แลก Authorization Code เป็น Access Token
-                token_url = "https://imauth.bora.dopa.go.th/api/v2/oauth2/token/"
-                token_data = {
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "redirect_uri": redirect_uri,
-                    "client_id": THAID_CLIENT_ID,
-                    "client_secret": THAID_CLIENT_SECRET
-                }
-
-                logger.info(f"Manual token exchange at {token_url}")
-                token_res = await client.post(token_url, data=token_data, headers=headers)
-
-                if token_res.status_code != 200:
-                    logger.error(f"Manual token exchange failed: {token_res.text}")
-                    qr_sessions[state]["status"] = "error"
-                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=token_exchange_failed&detail={token_res.text}")
-
-                token_json = token_res.json()
-                access_token = token_json.get("access_token")
-
-                if not access_token:
-                    logger.error("No access_token found in token response.")
-                    qr_sessions[state]["status"] = "error"
-                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=no_access_token")
-
-                # 2. ดึงข้อมูล User Info ด้วย Access Token
-                userinfo_url = "https://imauth.bora.dopa.go.th/api/v2/oauth2/userinfo/"
-                userinfo_headers = {"Authorization": f"Bearer {access_token}"}
-                if THAID_API_KEY:
-                    userinfo_headers['x-api-key'] = THAID_API_KEY
-
-                logger.info(f"Manual userinfo fetch at {userinfo_url}")
-                userinfo_res = await client.get(userinfo_url, headers=userinfo_headers)
-
-                if userinfo_res.status_code != 200:
-                    logger.error(f"Manual userinfo fetch failed: {userinfo_res.text}")
-                    qr_sessions[state]["status"] = "error"
-                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=userinfo_fetch_failed&detail={userinfo_res.text}")
-
-                user_info = userinfo_res.json()
-
+            user_info = await exchange_code_for_userinfo(code, redirect_uri)
         except Exception as e:
-            logger.error(f"Manual token exchange exception: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            qr_sessions[state]["status"] = "error"
-            return RedirectResponse(url=f"{FRONTEND_URL}/?error=manual_exchange_exception&detail={str(e)}")
+            logger.error(f"Mobile Direct Flow token exchange error: {str(e)}")
+            import traceback; traceback.print_exc()
+            return RedirectResponse(url=f"{FRONTEND_URL}/?error=mobile_exchange_failed&detail={str(e)}")
 
     else:
-        # --- Standard Redirect Flow (กรณีสแกน/เข้าสู่ระบบด้วยอุปกรณ์เดียวกัน) ---
-        state_captive = {}
-        try:
-            state_captive = json.loads(state)
-            if not isinstance(state_captive, dict):
-                state_captive = {}
-        except (json.JSONDecodeError, TypeError):
-            state_captive = {}
-
-        logger.info(f"Processing standard Redirect Flow callback. State captive: {state_captive}")
+        # ─────────────────────────────────────────────────────
+        # Flow 3: Standard Redirect Flow (Authlib session-based)
+        # ─────────────────────────────────────────────────────
+        logger.info("Processing standard Redirect Flow callback")
         try:
             token = await oauth.thaid.authorize_access_token(request)
             user_info = token.get('userinfo')
@@ -494,22 +521,13 @@ async def auth_callback(request: Request, response: Response):
                 logger.error("No userinfo found in token.")
                 return RedirectResponse(url=f"{FRONTEND_URL}/?error=no_userinfo")
 
-            # ดึงข้อมูลจาก state เป็นหลัก และ session เป็น fallback
             captive_data = {
-                "mac": state_captive.get("mac") or request.session.get('guest_mac', ""),
-                "ip": state_captive.get("ip") or request.session.get('guest_ip', ""),
-                "original_url": state_captive.get("originalUrl") or request.session.get('original_url', ""),
-                "magic": state_captive.get("magic") or request.session.get('fortigate_magic', ""),
-                "fw_ip": state_captive.get("fw_ip") or request.session.get('fortigate_ip', FORTIGATE_IP),
-                "auth_url": state_captive.get("auth_url") or request.session.get('auth_url', ""),
+                "mac": request.session.get('guest_mac', ""),
+                "ip": request.session.get('guest_ip', ""),
+                "original_url": request.session.get('original_url', ""),
+                "magic": request.session.get('fortigate_magic', ""),
+                "fw_ip": request.session.get('fortigate_ip', FORTIGATE_IP),
             }
-
-            # ตรวจสอบ qr_session จาก state
-            qr_from_state = state_captive.get("qr_session", "")
-            if qr_from_state and qr_from_state in qr_sessions:
-                qr_session_id = qr_from_state
-
-            logger.info(f"Resolved captive data: {captive_data}")
         except Exception as e:
             logger.error(f"Authlib Callback Error: {str(e)}")
             import traceback
@@ -689,8 +707,121 @@ async def auth_callback(request: Request, response: Response):
 </html>"""
         return HTMLResponse(content=html_content)
 
+    elif is_mobile_direct_flow:
+        # ─────────────────────────────────────────────────────
+        # Mobile Direct Flow HTML Response
+        # ─────────────────────────────────────────────────────
+        logger.info("Returning Mobile Direct Flow HTML response")
+        user_info_json = json.dumps(user_info, ensure_ascii=False)
+        magic = captive_data.get("magic", "")
+        ip_val = captive_data.get("ip", "")
+        mac_val = captive_data.get("mac", "")
+        fw_ip = captive_data.get("fw_ip", FORTIGATE_IP)
+        original_url = captive_data.get("original_url", "")
+
+        mobile_html_content = f"""<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>เข้าสู่ระบบสำเร็จ</title>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: 'Sarabun', sans-serif; }}
+    body {{
+      min-height: 100vh;
+      background: linear-gradient(135deg, #0F3A6C 0%, #1a5a9a 100%);
+      display: flex; align-items: center; justify-content: center; padding: 20px;
+    }}
+    .card {{
+      background: white; border-radius: 20px; padding: 40px 32px;
+      text-align: center; max-width: 380px; width: 100%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }}
+    .icon {{
+      width: 80px; height: 80px; background: #dcfce7;
+      border-radius: 50%; display: flex; align-items: center;
+      justify-content: center; margin: 0 auto 20px;
+    }}
+    .spinner {{
+      width: 50px; height: 50px; border: 5px solid #eff6ff;
+      border-top-color: #0F3A6C; border-radius: 50%;
+      animation: spin 1s infinite linear; margin: 0 auto 24px;
+    }}
+    @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
+    h1 {{ color: #0F3A6C; font-size: 22px; font-weight: 700; margin-bottom: 12px; }}
+    p {{ color: #6b7280; font-size: 15px; line-height: 1.6; }}
+    .name {{ color: #0F3A6C; font-weight: 700; font-size: 16px; margin: 12px 0 4px; }}
+    .success-badge {{
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #dcfce7; color: #16a34a; padding: 6px 16px;
+      border-radius: 20px; font-size: 13px; font-weight: 600; margin-bottom: 16px;
+    }}
+  </style>
+  <script>
+    window.onload = function() {{
+      try {{
+        const captiveData = {{
+          mac: {json.dumps(mac_val)},
+          ip: {json.dumps(ip_val)},
+          url: {json.dumps(original_url)},
+          magic: {json.dumps(magic)},
+          fw_ip: {json.dumps(fw_ip)}
+        }};
+        localStorage.setItem('captive_params', JSON.stringify(captiveData));
+
+        const successData = {{
+          user_info: {user_info_json},
+          username: {json.dumps(username)},
+          password: {json.dumps(password)},
+          fw_ip: {json.dumps(fw_ip)},
+          fw_port: "{FORTIGATE_AUTH_PORT}",
+          fw_path: "{FORTIGATE_AUTH_PATH}"
+        }};
+        localStorage.setItem('thaid_success_data', JSON.stringify(successData));
+
+        // Submit FortiGate auth form via iframe
+        const form = document.getElementById('auth_form');
+        if (form && {json.dumps(bool(magic))}) {{
+          form.submit();
+        }}
+
+        // Redirect to keepalive page after 1.5s
+        setTimeout(function() {{
+          window.location.href = '/keepalive';
+        }}, 1500);
+      }} catch (err) {{
+        console.error('Mobile Direct Flow callback error:', err);
+        setTimeout(function() {{ window.location.href = '/keepalive'; }}, 2000);
+      }}
+    }};
+  </script>
+</head>
+<body>
+  <iframe id="auth_iframe" name="auth_iframe" style="display: none;"></iframe>
+  <form id="auth_form" method="POST"
+    action="https://{fw_ip}:{FORTIGATE_AUTH_PORT}{FORTIGATE_AUTH_PATH}"
+    target="auth_iframe" style="display: none;">
+    <input type="hidden" name="magic" value="{magic}" />
+    <input type="hidden" name="username" value="{username}" />
+    <input type="hidden" name="password" value="{password}" />
+  </form>
+
+  <div class="card">
+    <div class="spinner"></div>
+    <h1>✅ ยืนยันตัวตนสำเร็จ</h1>
+    <div class="success-badge">✔ ThaID ยืนยันแล้ว</div>
+    <div class="name">{user_info.get('title', '')} {user_info.get('name', pid)}</div>
+    <p>ระบบกำลังเชื่อมต่ออินเทอร์เน็ตให้ท่าน กรุณารอสักครู่...</p>
+  </div>
+</body>
+</html>"""
+        return HTMLResponse(content=mobile_html_content)
+
     else:
-        # --- Standard Redirect Flow (กรณีสแกน/เข้าสู่ระบบด้วยอุปกรณ์เดียวกัน) ---
+        # ─────────────────────────────────────────────────────
+        # Standard Redirect Flow HTML Response
+        # ─────────────────────────────────────────────────────
         logger.info("Processing standard Redirect Flow callback HTML generator")
         
         user_info_json = json.dumps(user_info, ensure_ascii=False)
@@ -699,8 +830,7 @@ async def auth_callback(request: Request, response: Response):
         mac = captive_data.get("mac", "")
         fw_ip = captive_data.get("fw_ip", FORTIGATE_IP)
         original_url = captive_data.get("original_url", "")
-        auth_url_from_fg = captive_data.get("auth_url", "")
-
+        
         standard_html_content = f"""<!DOCTYPE html>
 <html lang="th">
 <head>
@@ -776,7 +906,6 @@ async def auth_callback(request: Request, response: Response):
     <input type="hidden" name="username" value="{username}" />
     <input type="hidden" name="password" value="{password}" />
   </form>
-
 
   <div class="card">
     <div class="spinner"></div>
