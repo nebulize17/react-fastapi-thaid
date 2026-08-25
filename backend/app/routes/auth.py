@@ -158,7 +158,9 @@ async def authenticate_fortigate_api(username: str, client_ip: str):
         logger.warning("Client IP is missing. Cannot authenticate session via REST API.")
         return False
 
-    url = f"https://{FORTIGATE_IP}/api/v2/monitor/user/firewall/auth"
+    # คลีนเอา https:// หรือ http:// ออกหากระบุมาใน FORTIGATE_IP
+    clean_fw_host = FORTIGATE_IP.replace("https://", "").replace("http://", "").split("/")[0]
+    url = f"https://{clean_fw_host}/api/v2/monitor/user/firewall/auth"
     headers = {
         "Authorization": f"Bearer {FORTIGATE_API_TOKEN}",
         "Content-Type": "application/json"
@@ -516,9 +518,11 @@ async def auth_callback(request: Request, response: Response):
 
     # ตรวจสอบว่ามีบัญชีนี้อยู่ใน ClearPass Guest Database แล้วหรือไม่ (ห้ามสร้างออโต้ตามความต้องการผู้ใช้งาน)
     if CPPM_HOST and CPPM_CLIENT_ID:
+        # คลีนโปรโตคอลออกหากระบุมาใน CLEARPASS_HOST
+        clean_cppm_host = CPPM_HOST.replace("https://", "").replace("http://", "").split("/")[0]
         try:
             async with httpx.AsyncClient(verify=False) as client:
-                token_url = f"https://{CPPM_HOST}/api/oauth"
+                token_url = f"https://{clean_cppm_host}/api/oauth"
                 token_data = {
                     "grant_type": "client_credentials",
                     "client_id": CPPM_CLIENT_ID,
@@ -532,7 +536,7 @@ async def auth_callback(request: Request, response: Response):
                 access_token = token_res.json().get("access_token")
                 
                 # เช็คข้อมูลผู้เข้าใช้ในฐานข้อมูลเกสท์ของ ClearPass
-                user_url = f"https://{CPPM_HOST}/api/guest/username/{username}"
+                user_url = f"https://{clean_cppm_host}/api/guest/username/{username}"
                 headers = {"Authorization": f"Bearer {access_token}"}
                 user_res = await client.get(user_url, headers=headers, timeout=10)
                 
