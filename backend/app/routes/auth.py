@@ -541,6 +541,12 @@ async def auth_callback(request: Request, response: Response):
                     if user_res.status_code == 200:
                         user_data = user_res.json()
                         db_password = user_data.get("password") or user_data.get("cleartext_password")
+                        
+                        # ลองดึงจากฟิลด์ notes หากผู้ดูแลระบบใช้วิธีใส่ PWD:ไว้ตอนสร้างแบบ Manual
+                        notes = user_data.get("notes", "")
+                        if notes and "PWD:" in notes:
+                            db_password = notes.split("PWD:")[-1].strip()
+                            
                         if db_password:
                             password = db_password
                             logger.info(f"Found existing ClearPass user '{username}'. Successfully pulled stored password from ClearPass Guest Database for login.")
