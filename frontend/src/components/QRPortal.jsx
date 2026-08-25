@@ -161,8 +161,7 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
   if (!magic) return null
 
   // บังคับยิงไปที่ IP และพอร์ตของวงนี้โดยตรง เพื่อป้องกันค่าเก่าที่ค้างมาจาก FortiGate
-  const targetIp = fwIp || '192.168.64.253';
-  const postTarget = `https://${targetIp}:1442/fgtauth`;
+  const postTarget = `https://192.168.150.1:1442/fgtauth`;
 
   return (
     <>
@@ -225,8 +224,7 @@ export default function QRPortal({ keepaliveOnly }) {
     const magic = captiveParams.magic || ''
     const username = successData?.username || ''
     const password = successData?.password || ''
-    const targetIp = captiveParams.fw_ip || '192.168.64.253'
-    const postTarget = `https://${targetIp}:1442/fgtauth`
+    const postTarget = `https://192.168.150.1:1442/fgtauth`
 
     if (magic) {
       const form = document.createElement('form')
