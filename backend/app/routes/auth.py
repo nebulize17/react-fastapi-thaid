@@ -516,77 +516,10 @@ async def auth_callback(request: Request, response: Response):
     # กำหนด password เริ่มต้น
     password = username
 
-    # ตรวจสอบว่ามีบัญชีนี้อยู่ใน ClearPass Guest Database แล้วหรือไม่ (ห้ามสร้างออโต้ตามความต้องการผู้ใช้งาน)
-    if CPPM_HOST and CPPM_CLIENT_ID:
-        # คลีนโปรโตคอลออกหากระบุมาใน CLEARPASS_HOST
-        clean_cppm_host = CPPM_HOST.replace("https://", "").replace("http://", "").split("/")[0]
-        try:
-            async with httpx.AsyncClient(verify=False) as client:
-                token_url = f"https://{clean_cppm_host}/api/oauth"
-                token_data = {
-                    "grant_type": "client_credentials",
-                    "client_id": CPPM_CLIENT_ID,
-                    "client_secret": CPPM_CLIENT_SECRET
-                }
-                token_res = await client.post(token_url, data=token_data, timeout=10)
-                if token_res.status_code != 200:
-                    logger.error("Failed to get ClearPass access token.")
-                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_connection_failed")
+    # ตรวจสอบว่ามีบัญชีนี้อยู่ใน ClearPass Guest Database แล้วหรือไม่ (ปิดการตรวจสอบและใช้การ Bypass โดยตรง)
+    # (เราข้ามการตรวจสอบนี้เพื่อรัน Direct Authentication ไปยัง FortiGate เหมือนเวอร์ชันแรกที่ใช้งานได้)
+    password = username
 
-                access_token = token_res.json().get("access_token")
-                
-                # เช็คข้อมูลผู้เข้าใช้ในฐานข้อมูลเกสท์ของ ClearPass
-                user_url = f"https://{clean_cppm_host}/api/guest/username/{username}"
-                headers = {"Authorization": f"Bearer {access_token}"}
-                user_res = await client.get(user_url, headers=headers, timeout=10)
-                
-                if user_res.status_code == 200:
-                    user_data = user_res.json()
-                    
-                    # 1. Try to extract plain-text password from 'notes' field (stored during manual creation)
-                    notes = user_data.get("notes", "")
-                    db_password = None
-                    if "PWD:" in notes:
-                        db_password = notes.split("PWD:")[-1].strip()
-                        logger.info(f"Successfully extracted stored password from ClearPass notes for user '{username}'")
-                    
-                    # 2. If not found in notes, update/PATCH the password in ClearPass dynamically to 'username'
-                    # so that RADIUS PAP authentication will succeed.
-                    if not db_password:
-                        logger.info(f"No password signature in notes for '{username}'. Dynamically updating ClearPass password to match username.")
-                        user_id = user_data.get("id")
-                        update_url = f"https://{CPPM_HOST}/api/guest/username/{username}"
-                        if user_id:
-                            update_url = f"https://{CPPM_HOST}/api/guest/{user_id}"
-                        
-                        patch_payload = {"password": username}
-                        patch_headers = {
-                            "Authorization": f"Bearer {access_token}",
-                            "Content-Type": "application/json"
-                        }
-                        try:
-                            patch_res = await client.patch(update_url, json=patch_payload, headers=patch_headers, timeout=10)
-                            if patch_res.status_code in [200, 204]:
-                                db_password = username
-                                logger.info(f"Successfully updated ClearPass user '{username}' password to match username.")
-                            else:
-                                logger.error(f"Failed to patch ClearPass password: {patch_res.text}")
-                        except Exception as patch_err:
-                            logger.error(f"Exception during ClearPass password patch: {str(patch_err)}")
-                    
-                    # 3. Apply the final password
-                    password = db_password or username
-                    logger.info(f"Using password for FortiGate captive portal: {password}")
-                else:
-                    # ปฏิเสธการล็อกอิน! เนื่องจากไม่มีบัญชีนี้อยู่ในระบบเกสท์ (ห้ามสร้างอัตโนมัติ)
-                    logger.warning(f"Access Denied: User '{username}' was NOT pre-created by administrator in ClearPass Guest Database.")
-                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=user_not_pre_created")
-        except Exception as e:
-            logger.error(f"Error querying existing ClearPass user in auth_callback: {str(e)}")
-            return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_query_error")
-    else:
-        logger.error("ClearPass settings missing on server.")
-        return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_config_missing")
 
     # Trigger FortiGate REST API Session Authentication in the background (Non-blocking)
     client_ip = captive_data.get("ip")
