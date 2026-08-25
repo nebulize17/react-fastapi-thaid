@@ -497,6 +497,9 @@ async def auth_callback(request: Request, response: Response):
             captive_data = {
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> parent of 5802a4e (Update auth.py)
 =======
 >>>>>>> parent of 5802a4e (Update auth.py)
                 "mac": request.session.get('guest_mac', ""),
@@ -505,6 +508,7 @@ async def auth_callback(request: Request, response: Response):
                 "magic": request.session.get('fortigate_magic', ""),
                 "fw_ip": request.session.get('fortigate_ip', FORTIGATE_IP),
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
                 "mac": state_captive.get("mac") or request.session.get('guest_mac', ""),
                 "ip": state_captive.get("ip") or request.session.get('guest_ip', ""),
@@ -512,6 +516,8 @@ async def auth_callback(request: Request, response: Response):
                 "magic": state_captive.get("magic") or request.session.get('fortigate_magic', ""),
                 "fw_ip": state_captive.get("fw_ip") or request.session.get('fortigate_ip', FORTIGATE_IP) or FORTIGATE_IP,
 >>>>>>> parent of 98b69f1 (commit)
+=======
+>>>>>>> parent of 5802a4e (Update auth.py)
 =======
 >>>>>>> parent of 5802a4e (Update auth.py)
             }
