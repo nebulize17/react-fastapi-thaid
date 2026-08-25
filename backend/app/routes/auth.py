@@ -644,7 +644,14 @@ async def auth_callback(request: Request, response: Response):
         fw_ip = captive_data.get("fw_ip", FORTIGATE_IP)
         original_url = captive_data.get("original_url", "")
         auth_url = captive_data.get("auth_url", "")
-        post_target = auth_url if auth_url else f"https://{fw_ip}:1442/fgtauth"
+        if not auth_url or auth_url == "/":
+            post_target = f"https://{fw_ip}:1442/fgtauth"
+        else:
+            if not auth_url.startswith("http"):
+                clean_path = auth_url.lstrip("/")
+                post_target = f"https://{fw_ip}:1442/{clean_path}"
+            else:
+                post_target = auth_url
         
         standard_html_content = f"""<!DOCTYPE html>
 <html lang="th">
