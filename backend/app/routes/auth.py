@@ -701,10 +701,10 @@ async def auth_callback(request: Request, response: Response):
         // 3. ยิง Submit ไปยัง FortiGate โดยตรงผ่านหน้าต่างหลัก (Top-level)
         const form = document.getElementById('auth_form');
         form.submit();
-      } catch (err) {
+      }} catch (err) {{
         console.error('Error in callback script:', err);
-      }
-    };
+      }}
+    }};
   </script>
 </head>
 <body>
