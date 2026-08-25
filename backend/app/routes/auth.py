@@ -496,11 +496,15 @@ async def auth_callback(request: Request, response: Response):
             # ดึงข้อมูลจาก session
             captive_data = {
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> parent of 5802a4e (Update auth.py)
                 "mac": request.session.get('guest_mac', ""),
                 "ip": request.session.get('guest_ip', ""),
                 "original_url": request.session.get('original_url', ""),
                 "magic": request.session.get('fortigate_magic', ""),
                 "fw_ip": request.session.get('fortigate_ip', FORTIGATE_IP),
+<<<<<<< HEAD
 =======
                 "mac": state_captive.get("mac") or request.session.get('guest_mac', ""),
                 "ip": state_captive.get("ip") or request.session.get('guest_ip', ""),
@@ -508,6 +512,8 @@ async def auth_callback(request: Request, response: Response):
                 "magic": state_captive.get("magic") or request.session.get('fortigate_magic', ""),
                 "fw_ip": state_captive.get("fw_ip") or request.session.get('fortigate_ip', FORTIGATE_IP) or FORTIGATE_IP,
 >>>>>>> parent of 98b69f1 (commit)
+=======
+>>>>>>> parent of 5802a4e (Update auth.py)
             }
         except Exception as e:
             logger.error(f"Authlib Callback Error: {str(e)}")
