@@ -36,6 +36,7 @@ export default function Login() {
       '&scope=' + encodeURIComponent(scopes) +
       '&state=' + encodeURIComponent(JSON.stringify(stateObj))
 
+<<<<<<< HEAD
     // ทำการนำทางไปยังหน้าจอ DOPA สำหรับตรวจสิทธิ์โดยตรงด้วยลิงก์ HTTPS มาตรฐาน
     // เพื่อความเสถียรและป้องกันเบราว์เซอร์บล็อก URL Scheme
     window.location.href = thaidAuthUrl;
@@ -55,6 +56,35 @@ export default function Login() {
       setShowCnaWarning(true)
     } else {
       proceedToLogin()
+=======
+    // ตรวจสอบว่าเป็น Android หรือไม่
+    const isAndroid = /Android/i.test(navigator.userAgent);
+
+    if (isAndroid) {
+      // ใช้ Android Intent Scheme เพื่อบังคับให้ระบบเปิดลิงก์ imauth บน Browser หลักของเครื่อง (เช่น Chrome)
+      // แทนการเปิดใน Sandboxed Webview (ซึ่งบล็อกการสลับหน้าแอป)
+      // เมื่อลิงก์เปิดบน Chrome หลักแล้ว จะสลับไปเปิดแอป ThaiD ได้อย่างราบรื่น
+      const intentUrl = `intent://imauth.bora.dopa.go.th/api/v2/oauth2/auth/?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(JSON.stringify(stateObj))}#Intent;scheme=https;end;`;
+      window.location.href = intentUrl;
+    } else {
+      // 1. สำหรับ iOS/อื่นๆ ปลุกแอปด้วย thaid://
+      try {
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = 'thaid://';
+        document.body.appendChild(iframe);
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+        }, 500);
+      } catch (e) {
+        console.warn('Failed to call deep link', e);
+      }
+
+      // 2. นำหน้าจอหลักเบราว์เซอร์ไปที่ DOPA
+      setTimeout(() => {
+        window.location.href = thaidAuthUrl;
+      }, 100);
+>>>>>>> parent of 63581b0 (Update Login.jsx)
     }
   }
 
