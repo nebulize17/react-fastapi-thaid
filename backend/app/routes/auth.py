@@ -493,8 +493,40 @@ async def auth_callback(request: Request, response: Response):
 
         logger.info(f"Processing standard Redirect Flow callback. State captive data: {state_captive}")
         try:
-            token = await oauth.thaid.authorize_access_token(request)
-            user_info = token.get('userinfo')
+            async with httpx.AsyncClient(verify=False) as client:
+                headers = {}
+                if THAID_API_KEY:
+                    headers['x-api-key'] = THAID_API_KEY
+
+                token_url = "https://imauth.bora.dopa.go.th/api/v2/oauth2/token/"
+                token_data = {
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                    "client_id": THAID_CLIENT_ID,
+                    "client_secret": THAID_CLIENT_SECRET
+                }
+
+                token_res = await client.post(token_url, data=token_data, headers=headers)
+                if token_res.status_code != 200:
+                    logger.error(f"Standard Flow token exchange failed: {token_res.text}")
+                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=token_exchange_failed")
+
+                access_token = token_res.json().get("access_token")
+                if not access_token:
+                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=no_access_token")
+
+                userinfo_url = "https://imauth.bora.dopa.go.th/api/v2/oauth2/userinfo/"
+                userinfo_headers = {"Authorization": f"Bearer {access_token}"}
+                if THAID_API_KEY:
+                    userinfo_headers['x-api-key'] = THAID_API_KEY
+
+                userinfo_res = await client.get(userinfo_url, headers=userinfo_headers)
+                if userinfo_res.status_code != 200:
+                    logger.error(f"Standard Flow userinfo fetch failed: {userinfo_res.text}")
+                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=userinfo_fetch_failed")
+
+                user_info = userinfo_res.json()
 
             if not user_info:
                 logger.error("No userinfo found in token.")
