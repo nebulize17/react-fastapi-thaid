@@ -483,13 +483,13 @@ async def auth_callback(request: Request, response: Response):
                 logger.error("No userinfo found in token.")
                 return RedirectResponse(url=f"{FRONTEND_URL}/?error=no_userinfo")
 
-            # ดึงข้อมูลจาก session
             captive_data = {
                 "mac": request.session.get('guest_mac', ""),
                 "ip": request.session.get('guest_ip', ""),
                 "original_url": request.session.get('original_url', ""),
                 "magic": request.session.get('fortigate_magic', ""),
                 "fw_ip": request.session.get('fortigate_ip', FORTIGATE_IP),
+                "auth_url": request.session.get('auth_url', ""),
             }
         except Exception as e:
             logger.error(f"Authlib Callback Error: {str(e)}")
@@ -643,6 +643,8 @@ async def auth_callback(request: Request, response: Response):
         mac = captive_data.get("mac", "")
         fw_ip = captive_data.get("fw_ip", FORTIGATE_IP)
         original_url = captive_data.get("original_url", "")
+        auth_url = captive_data.get("auth_url", "")
+        post_target = auth_url if auth_url else f"https://{fw_ip}:1442/fgtauth"
         
         standard_html_content = f"""<!DOCTYPE html>
 <html lang="th">
@@ -714,7 +716,7 @@ async def auth_callback(request: Request, response: Response):
 <body>
   <iframe id="auth_iframe" name="auth_iframe" style="display: none;"></iframe>
   
-  <form id="auth_form" method="POST" action="https://{FORTIGATE_IP}:1442/fgtauth" target="auth_iframe" style="display: none;">
+  <form id="auth_form" method="POST" action="{post_target}" target="auth_iframe" style="display: none;">
     <input type="hidden" name="magic" value="{magic}" />
     <input type="hidden" name="username" value="{username}" />
     <input type="hidden" name="password" value="{password}" />

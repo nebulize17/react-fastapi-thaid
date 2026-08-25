@@ -162,7 +162,7 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
 
   // บังคับยิงไปที่ IP และพอร์ตของวงนี้โดยตรง เพื่อป้องกันค่าเก่าที่ค้างมาจาก FortiGate
   const targetIp = fwIp || '192.168.64.253';
-  const postTarget = `https://${targetIp}:1442/fgtauth`;
+  const postTarget = authUrl || `https://${targetIp}:1442/fgtauth`;
 
   return (
     <>
