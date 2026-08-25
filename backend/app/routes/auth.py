@@ -377,6 +377,49 @@ async def login(
     return await oauth.thaid.authorize_redirect(request, redirect_uri, state=captive_state)
 
 
+@router.get("/login-url")
+async def login_url(
+    request: Request,
+    mac: str = None,
+    ip: str = None,
+    url: str = None,
+    magic: str = None,
+    fw_ip: str = None,
+    auth_url: str = None,
+    qr_session: str = None,
+):
+    """Generate the ThaiD authorization URL as a Universal Link and return it as JSON."""
+    real_ip = ip
+    if not real_ip:
+        x_forwarded_for = request.headers.get("x-forwarded-for")
+        if x_forwarded_for:
+            real_ip = x_forwarded_for.split(",")[0].strip()
+        else:
+            real_ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
+
+    if mac: request.session['guest_mac'] = mac
+    request.session['guest_ip'] = real_ip
+    if url: request.session['original_url'] = url
+    if magic: request.session['fortigate_magic'] = magic
+    if fw_ip: request.session['fortigate_ip'] = fw_ip
+    if auth_url: request.session['auth_url'] = auth_url
+
+    if qr_session:
+        request.session['qr_session_id'] = qr_session
+
+    redirect_uri = THAID_CALLBACK_ENDPOINT if THAID_CALLBACK_ENDPOINT else str(request.url_for('auth_callback'))
+    if THAID_CALLBACK_ENDPOINT and THAID_CALLBACK_ENDPOINT.startswith("https://"):
+        redirect_uri = redirect_uri.replace("http://", "https://", 1)
+
+    client = oauth.thaid
+    rv = await client.create_authorization_url(redirect_uri)
+    await client.save_authorize_data(request, redirect_uri=redirect_uri, **rv)
+    auth_link = rv["url"]
+
+    logger.info(f"Generated login URL for API request: {auth_link}")
+    return {"url": auth_link}
+
+
 # ============================================================
 # ENDPOINT: GET /api/auth/callback
 # ThaiD จะ Redirect กลับมาที่นี่หลัง User สแกน QR
