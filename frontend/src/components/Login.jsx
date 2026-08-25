@@ -5,7 +5,6 @@ export default function Login() {
   const error = params.get('error')
 
   const handleLogin = () => {
-<<<<<<< HEAD
     // ดึง Captive Portal Parameters จาก FortiGate redirect query
     const magic = params.get('magic') || ''
     const originalUrl = params.get('original_url') || params.get('url') || ''
@@ -39,10 +38,6 @@ export default function Login() {
 
     // นำทางโดยตรงจากฝั่ง Frontend เพื่อหลีกเลี่ยงการโดนบล็อกการเปิดแอปอัตโนมัติ (Auto-Redirect Block) บน Android Chrome
     window.location.href = thaidAuthUrl
-=======
-    // Using relative path to work on both local and Ubuntu
-    window.location.href = '/api/auth/login' + window.location.search
->>>>>>> parent of c85c136 (commit)
   }
 
   return (
