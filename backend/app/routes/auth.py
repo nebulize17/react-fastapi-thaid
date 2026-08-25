@@ -366,8 +366,23 @@ async def login(
     if THAID_CALLBACK_ENDPOINT and THAID_CALLBACK_ENDPOINT.startswith("https://"):
         redirect_uri = redirect_uri.replace("http://", "https://", 1)
 
+<<<<<<< HEAD
     logger.info(f"Initiating login with redirect_uri: {redirect_uri}")
     return await oauth.thaid.authorize_redirect(request, redirect_uri)
+=======
+    # ฝัง captive params ไว้ใน state ด้วย เพื่อรองรับ browser ที่ไม่ทำงานด้วย session cookie (Tablet, WebView)
+    captive_state = json.dumps({
+        "mac": mac or "",
+        "ip": real_ip or "",
+        "originalUrl": url or "",
+        "magic": magic or "",
+        "fw_ip": fw_ip or FORTIGATE_IP or "",
+        "qr_session": qr_session or "",
+    })
+
+    logger.info(f"Initiating login with redirect_uri: {redirect_uri}, captive_state embedded")
+    return await oauth.thaid.authorize_redirect(request, redirect_uri, state=captive_state)
+>>>>>>> parent of 98b69f1 (commit)
 
 
 # ============================================================
@@ -480,11 +495,19 @@ async def auth_callback(request: Request, response: Response):
 
             # ดึงข้อมูลจาก session
             captive_data = {
+<<<<<<< HEAD
                 "mac": request.session.get('guest_mac', ""),
                 "ip": request.session.get('guest_ip', ""),
                 "original_url": request.session.get('original_url', ""),
                 "magic": request.session.get('fortigate_magic', ""),
                 "fw_ip": request.session.get('fortigate_ip', FORTIGATE_IP),
+=======
+                "mac": state_captive.get("mac") or request.session.get('guest_mac', ""),
+                "ip": state_captive.get("ip") or request.session.get('guest_ip', ""),
+                "original_url": state_captive.get("originalUrl") or request.session.get('original_url', ""),
+                "magic": state_captive.get("magic") or request.session.get('fortigate_magic', ""),
+                "fw_ip": state_captive.get("fw_ip") or request.session.get('fortigate_ip', FORTIGATE_IP) or FORTIGATE_IP,
+>>>>>>> parent of 98b69f1 (commit)
             }
         except Exception as e:
             logger.error(f"Authlib Callback Error: {str(e)}")
