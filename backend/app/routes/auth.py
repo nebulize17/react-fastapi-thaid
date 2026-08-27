@@ -25,6 +25,7 @@ from app.config import (
 import uuid
 import time
 import json
+import hashlib
 import logging
 import asyncio
 import httpx
@@ -103,8 +104,11 @@ async def create_cppm_user(username: str, password: str, user_info: dict = None)
     # Map to ClearPass Guest fields
     visitor_name = thai_name if thai_name else (english_name if english_name else f"ThaiD User {username}")
     
-    # Store PID and metadata in the ClearPass notes field for tracking
-    notes = f"ThaiD QR Authentication. PID: {pid}. Name (TH): {thai_name}. Name (EN): {english_name}. Authenticated at: {datetime.now(timezone.utc).isoformat()} | PWD:{password}"
+    # Mask PID for security (e.g. 1101500387514 -> 110XXXXXX7514)
+    masked_pid = pid[:3] + "X" * (len(pid) - 6) + pid[-3:] if len(pid) >= 8 else "X" * len(pid)
+
+    # Store masked PID and metadata in the ClearPass notes field for tracking (No PWD stored)
+    notes = f"ThaiD QR Authentication. PID: {masked_pid}. Name (TH): {thai_name}. Name (EN): {english_name}. Authenticated at: {datetime.now(timezone.utc).isoformat()}"
 
     try:
         async with httpx.AsyncClient(verify=False) as client:
@@ -511,8 +515,8 @@ async def auth_callback(request: Request, response: Response):
     # สร้าง JWT session token
     jwt_token = create_jwt_token({"user": user_info})
 
-    # กำหนด password เริ่มต้น
-    password = username
+    # คำนวณรหัสผ่าน 8 หลักจาก Hash ของ PID เพื่อความปลอดภัยสูงตามมาตรฐาน
+    password = hashlib.sha256(pid.encode()).hexdigest()[:8]
 
     # ตรวจสอบว่ามีบัญชีนี้อยู่ใน ClearPass Guest Database แล้วหรือไม่ (ห้ามสร้างออโต้ตามความต้องการผู้ใช้งาน)
     if CPPM_HOST and CPPM_CLIENT_ID:
@@ -539,15 +543,22 @@ async def auth_callback(request: Request, response: Response):
                 if user_res.status_code == 200:
                     user_data = user_res.json()
                     
-                    # 1. Try to extract plain-text password from 'notes' field (stored during manual creation)
+                    # 1. ตรวจสอบว่าเป็นผู้ใช้งานจากระบบ ThaiD หรือไม่
                     notes = user_data.get("notes", "")
                     db_password = None
-                    if "PWD:" in notes:
+                    
+                    is_thaid_user = "ThaiD" in notes
+                    
+                    if is_thaid_user:
+                        # คำนวณรหัสผ่านจาก PID ที่ได้มาจาก callback ทันทีโดยไม่ต้องบันทึกเป็น plaintext หรือส่ง PATCH
+                        db_password = hashlib.sha256(pid.encode()).hexdigest()[:8]
+                        logger.info(f"Recognized ThaiD user '{username}'. Dynamic 8-character password regenerated from PID.")
+                    elif "PWD:" in notes:
+                        # บัญชีประเภทคูปองเกสท์ดึงรหัสผ่านธรรมดาจาก Notes
                         db_password = notes.split("PWD:")[-1].strip()
                         logger.info(f"Successfully extracted stored password from ClearPass notes for user '{username}'")
                     
-                    # 2. If not found in notes, update/PATCH the password in ClearPass dynamically to 'username'
-                    # so that RADIUS PAP authentication will succeed.
+                    # 2. กรณีไม่มีลายเซ็น ThaiD และไม่มีฟิลด์ PWD: ใน notes (กรณีบัญชีเดิมตกค้าง)
                     if not db_password:
                         logger.info(f"No password signature in notes for '{username}'. Dynamically updating ClearPass password to match username.")
                         user_id = user_data.get("id")
@@ -570,7 +581,7 @@ async def auth_callback(request: Request, response: Response):
                         except Exception as patch_err:
                             logger.error(f"Exception during ClearPass password patch: {str(patch_err)}")
                     
-                    # 3. Apply the final password
+                    # 3. นำรหัสผ่านที่ได้ไปเข้า Captive Portal
                     password = db_password or username
                     logger.info(f"Using password for FortiGate captive portal: {password}")
                 else:
@@ -581,8 +592,7 @@ async def auth_callback(request: Request, response: Response):
                         logger.error(f"Failed to dynamically create ClearPass user '{username}'")
                         return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_creation_failed")
                     
-                    # Apply the final password (which is username by default)
-                    password = username
+                    # รหัสผ่านที่ใช้คือรหัสผ่าน 8 หลักที่คำนวณจาก PID
                     logger.info(f"Using password for FortiGate captive portal (Dynamically Created User): {password}")
         except Exception as e:
             logger.error(f"Error querying existing ClearPass user in auth_callback: {str(e)}")
