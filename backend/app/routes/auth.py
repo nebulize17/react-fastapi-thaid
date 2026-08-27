@@ -85,6 +85,34 @@ def build_thaid_auth_url(session_id: str, redirect_uri: str) -> str:
 
 
 # ============================================================
+# Helper: Pattern-based Deterministic Password Generator
+# ============================================================
+def generate_pattern_password(pid: str) -> str:
+    """
+    Generate a unique password for the user matching the pattern: 3Th6ofvN
+    Pattern: Digit, Upper, Lower, Digit, Lower, Lower, Lower, Upper
+    Deterministic based on SHA-256 of user's PID.
+    """
+    import hashlib
+    import string
+    h = hashlib.sha256(pid.encode('utf-8')).digest()
+    digits = string.digits
+    uppercase = string.ascii_uppercase
+    lowercase = string.ascii_lowercase
+    
+    p0 = digits[h[0] % len(digits)]
+    p1 = uppercase[h[1] % len(uppercase)]
+    p2 = lowercase[h[2] % len(lowercase)]
+    p3 = digits[h[3] % len(digits)]
+    p4 = lowercase[h[4] % len(lowercase)]
+    p5 = lowercase[h[5] % len(lowercase)]
+    p6 = lowercase[h[6] % len(lowercase)]
+    p7 = uppercase[h[7] % len(uppercase)]
+    
+    return f"{p0}{p1}{p2}{p3}{p4}{p5}{p6}{p7}"
+
+
+# ============================================================
 # Helper: ClearPass Guest Account
 # ============================================================
 async def create_cppm_user(username: str, password: str, user_info: dict = None):
@@ -103,8 +131,11 @@ async def create_cppm_user(username: str, password: str, user_info: dict = None)
     # Map to ClearPass Guest fields
     visitor_name = thai_name if thai_name else (english_name if english_name else f"ThaiD User {username}")
     
-    # Store PID and metadata in the ClearPass notes field for tracking
-    notes = f"ThaiD QR Authentication. PID: {pid}. Name (TH): {thai_name}. Name (EN): {english_name}. Authenticated at: {datetime.now(timezone.utc).isoformat()}"
+    # Mask PID for security (e.g. 1101500387514 -> 110XXXXXX7514)
+    masked_pid = pid[:3] + "X" * (len(pid) - 6) + pid[-3:] if len(pid) >= 8 else "X" * len(pid)
+    
+    # Store masked PID and metadata in the ClearPass notes field for tracking (No plain password stored)
+    notes = f"ThaiD QR Authentication. PID: {masked_pid}. Name (TH): {thai_name}. Name (EN): {english_name}. Authenticated at: {datetime.now(timezone.utc).isoformat()}"
 
     try:
         async with httpx.AsyncClient(verify=False) as client:
@@ -511,10 +542,10 @@ async def auth_callback(request: Request, response: Response):
     # สร้าง JWT session token
     jwt_token = create_jwt_token({"user": user_info})
 
-    # กำหนด password เริ่มต้น
-    password = username
+    # กำหนด password เริ่มต้นตาม pattern 3Th6ofvN
+    password = generate_pattern_password(pid)
 
-    # ตรวจสอบว่ามีบัญชีนี้อยู่ใน ClearPass Guest Database แล้วหรือไม่ (ห้ามสร้างออโต้ตามความต้องการผู้ใช้งาน)
+    # ตรวจสอบว่ามีบัญชีนี้อยู่ใน ClearPass Guest Database แล้วหรือไม่
     if CPPM_HOST and CPPM_CLIENT_ID:
         try:
             async with httpx.AsyncClient(verify=False) as client:
@@ -539,15 +570,22 @@ async def auth_callback(request: Request, response: Response):
                 if user_res.status_code == 200:
                     user_data = user_res.json()
                     
-                    # 1. Try to extract plain-text password from 'notes' field (stored during manual creation)
                     notes = user_data.get("notes", "")
                     db_password = None
-                    if "PWD:" in notes:
+                    
+                    # 1. เช็คว่าเป็นบัญชีที่สร้างจากระบบ ThaiD หรือไม่ (ดูว่ามี "ThaiD" ใน notes)
+                    is_thaid_user = "ThaiD" in notes
+                    
+                    if is_thaid_user:
+                        # คำนวณรหัสผ่านจาก PID ที่ได้มาจาก callback ทันที
+                        db_password = generate_pattern_password(pid)
+                        logger.info(f"Recognized ThaiD user '{username}'. Dynamic password regenerated from PID.")
+                    elif "PWD:" in notes:
+                        # 2. บัญชีประเภทคูปองเกสท์ดึงรหัสผ่านธรรมดาจาก Notes
                         db_password = notes.split("PWD:")[-1].strip()
                         logger.info(f"Successfully extracted stored password from ClearPass notes for user '{username}'")
                     
-                    # 2. If not found in notes, update/PATCH the password in ClearPass dynamically to 'username'
-                    # so that RADIUS PAP authentication will succeed.
+                    # 3. กรณีไม่มีลายเซ็น ThaiD และไม่มีฟิลด์ PWD: ใน notes (กรณีบัญชีเดิมตกค้าง)
                     if not db_password:
                         logger.info(f"No password signature in notes for '{username}'. Dynamically updating ClearPass password to match username.")
                         user_id = user_data.get("id")
@@ -570,13 +608,18 @@ async def auth_callback(request: Request, response: Response):
                         except Exception as patch_err:
                             logger.error(f"Exception during ClearPass password patch: {str(patch_err)}")
                     
-                    # 3. Apply the final password
+                    # 4. นำรหัสผ่านที่ได้ไปใช้เข้า Captive Portal
                     password = db_password or username
                     logger.info(f"Using password for FortiGate captive portal: {password}")
                 else:
-                    # ปฏิเสธการล็อกอิน! เนื่องจากไม่มีบัญชีนี้อยู่ในระบบเกสท์ (ห้ามสร้างอัตโนมัติ)
-                    logger.warning(f"Access Denied: User '{username}' was NOT pre-created by administrator in ClearPass Guest Database.")
-                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=user_not_pre_created")
+                    # กรณีไม่มี user บน clearpass ให้ทำการสร้างบัญชีเกสท์ใหม่ในระบบ ClearPass อัตโนมัติ
+                    logger.info(f"User '{username}' not found in ClearPass. Creating new user dynamically.")
+                    created = await create_cppm_user(username, password, user_info)
+                    if not created:
+                        logger.error(f"Failed to dynamically create ClearPass user '{username}'")
+                        return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_creation_failed")
+                    
+                    logger.info(f"Using password for FortiGate captive portal (Dynamically Created User): {password}")
         except Exception as e:
             logger.error(f"Error querying existing ClearPass user in auth_callback: {str(e)}")
             return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_query_error")
