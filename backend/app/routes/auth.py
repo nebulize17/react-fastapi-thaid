@@ -113,6 +113,9 @@ async def create_cppm_user(username: str, password: str, user_info: dict = None)
 =======
     # Store PID and metadata in the ClearPass notes field for tracking
     notes = f"ThaiD QR Authentication. PID: {pid}. Name (TH): {thai_name}. Name (EN): {english_name}. Authenticated at: {datetime.now(timezone.utc).isoformat()}"
+<<<<<<< HEAD
+>>>>>>> parent of 42f20cd (Commit Create User From ThaiD)
+=======
 >>>>>>> parent of 42f20cd (Commit Create User From ThaiD)
 
     try:
@@ -591,6 +594,7 @@ async def auth_callback(request: Request, response: Response):
                     logger.info(f"Using password for FortiGate captive portal: {password}")
                 else:
 <<<<<<< HEAD
+<<<<<<< HEAD
                     # กรณีไม่มี user บน clearpass ให้มีการสร้าง user pass โดยนำข้อมูลที่ได้จาก thaid ไปเก็บบน clearpass
                     logger.info(f"User '{username}' not found in ClearPass. Creating new user dynamically.")
                     created = await create_cppm_user(username, password, user_info)
@@ -600,6 +604,11 @@ async def auth_callback(request: Request, response: Response):
                     
                     # รหัสผ่านที่ใช้คือรหัสผ่าน 8 หลักที่คำนวณจาก PID
                     logger.info(f"Using password for FortiGate captive portal (Dynamically Created User): {password}")
+=======
+                    # ปฏิเสธการล็อกอิน! เนื่องจากไม่มีบัญชีนี้อยู่ในระบบเกสท์ (ห้ามสร้างอัตโนมัติ)
+                    logger.warning(f"Access Denied: User '{username}' was NOT pre-created by administrator in ClearPass Guest Database.")
+                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=user_not_pre_created")
+>>>>>>> parent of 42f20cd (Commit Create User From ThaiD)
 =======
                     # ปฏิเสธการล็อกอิน! เนื่องจากไม่มีบัญชีนี้อยู่ในระบบเกสท์ (ห้ามสร้างอัตโนมัติ)
                     logger.warning(f"Access Denied: User '{username}' was NOT pre-created by administrator in ClearPass Guest Database.")
