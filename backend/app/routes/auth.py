@@ -104,11 +104,16 @@ async def create_cppm_user(username: str, password: str, user_info: dict = None)
     # Map to ClearPass Guest fields
     visitor_name = thai_name if thai_name else (english_name if english_name else f"ThaiD User {username}")
     
+<<<<<<< HEAD
     # Mask PID for security (e.g. 1101500387514 -> 110XXXXXX7514)
     masked_pid = pid[:3] + "X" * (len(pid) - 6) + pid[-3:] if len(pid) >= 8 else "X" * len(pid)
 
     # Store masked PID and metadata in the ClearPass notes field for tracking (No PWD stored)
     notes = f"ThaiD QR Authentication. PID: {masked_pid}. Name (TH): {thai_name}. Name (EN): {english_name}. Authenticated at: {datetime.now(timezone.utc).isoformat()}"
+=======
+    # Store PID and metadata in the ClearPass notes field for tracking
+    notes = f"ThaiD QR Authentication. PID: {pid}. Name (TH): {thai_name}. Name (EN): {english_name}. Authenticated at: {datetime.now(timezone.utc).isoformat()}"
+>>>>>>> parent of 42f20cd (Commit Create User From ThaiD)
 
     try:
         async with httpx.AsyncClient(verify=False) as client:
@@ -585,6 +590,7 @@ async def auth_callback(request: Request, response: Response):
                     password = db_password or username
                     logger.info(f"Using password for FortiGate captive portal: {password}")
                 else:
+<<<<<<< HEAD
                     # กรณีไม่มี user บน clearpass ให้มีการสร้าง user pass โดยนำข้อมูลที่ได้จาก thaid ไปเก็บบน clearpass
                     logger.info(f"User '{username}' not found in ClearPass. Creating new user dynamically.")
                     created = await create_cppm_user(username, password, user_info)
@@ -594,6 +600,11 @@ async def auth_callback(request: Request, response: Response):
                     
                     # รหัสผ่านที่ใช้คือรหัสผ่าน 8 หลักที่คำนวณจาก PID
                     logger.info(f"Using password for FortiGate captive portal (Dynamically Created User): {password}")
+=======
+                    # ปฏิเสธการล็อกอิน! เนื่องจากไม่มีบัญชีนี้อยู่ในระบบเกสท์ (ห้ามสร้างอัตโนมัติ)
+                    logger.warning(f"Access Denied: User '{username}' was NOT pre-created by administrator in ClearPass Guest Database.")
+                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=user_not_pre_created")
+>>>>>>> parent of 42f20cd (Commit Create User From ThaiD)
         except Exception as e:
             logger.error(f"Error querying existing ClearPass user in auth_callback: {str(e)}")
             return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_query_error")
