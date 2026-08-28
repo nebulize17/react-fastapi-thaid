@@ -296,12 +296,25 @@ export default function QRPortal({ keepaliveOnly }) {
     if (keepaliveOnly) return
 
     const params = new URLSearchParams(window.location.search)
+    
+    // Extract FortiGate Host dynamically from URL or URL param
+    let fwHost = '';
+    const urlParam = params.get('URL') || params.get('url') || '';
+    if (urlParam) {
+      try {
+        const parsedUrl = new URL(urlParam);
+        fwHost = parsedUrl.hostname;
+      } catch (e) {
+        console.error('Error parsing URL param:', e);
+      }
+    }
+
     const newParams = {
       mac: params.get('mac') || params.get('client_mac') || '',
       ip: params.get('ip') || params.get('client_ip') || '',
       url: params.get('url') || params.get('redirect_url') || '',
       magic: params.get('magic') || '',
-      fw_ip: params.get('fw_ip') || '192.168.254.253',
+      fw_ip: fwHost || params.get('fw_ip') || '192.168.254.253',
       type: params.get('type') || '',
     }
     setCaptiveParams(newParams)

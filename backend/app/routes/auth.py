@@ -253,6 +253,7 @@ async def create_qr_session(
     magic: str = None,
     fw_ip: str = None,
     auth_url: str = None,
+    URL: str = None,
 ):
     """
     สร้าง QR Session ใหม่
@@ -265,14 +266,25 @@ async def create_qr_session(
     session_id = str(uuid.uuid4())
     now = time.time()
 
-    # Captive portal params จาก FortiGate query string
-    # FortiGate ส่ง: ?magic=XXXX&type=fw&user=&ip=CLIENT_IP&mac=CLIENT_MAC&url=ORIGINAL_URL
-    effective_fw_ip = fw_ip or FORTIGATE_IP
+    # Dynamic FortiGate Host resolution
+    effective_fw_ip = FORTIGATE_IP
+    target_url = URL or auth_url or url
+    if target_url:
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(target_url)
+            if parsed.hostname:
+                effective_fw_ip = parsed.hostname
+        except Exception:
+            pass
+    elif fw_ip:
+        effective_fw_ip = fw_ip
 
-    # State payload ที่จะส่งไปกับ ThaiD OAuth และจะกลับมาใน callback
-    # บันทึก session — เก็บ captive portal params ทั้งหมดไว้ใน store
-    # Extract client real IP (essential when behind Nginx in Docker)
-    client_ip = ip
+    # Extract client real IP (ignore if it is a hostname like 'auth.dtam.moph.go.th')
+    client_ip = ""
+    if ip and not any(c.isalpha() for c in ip):
+        client_ip = ip
+
     if not client_ip:
         x_forwarded_for = request.headers.get("x-forwarded-for")
         if x_forwarded_for:
@@ -287,7 +299,7 @@ async def create_qr_session(
         "original_url": url or "",
         "magic": magic or "",
         "fw_ip": effective_fw_ip,
-        "auth_url": auth_url or "",
+        "auth_url": target_url or "",
         "user_info": None,
         "created_at": now,
     }
@@ -369,11 +381,28 @@ async def login(
     fw_ip: str = None,
     auth_url: str = None,
     qr_session: str = None,   # ← QR Flow: session_id จาก QR Code
+    URL: str = None,
 ):
     """Initiate the ThaID OAuth2 Login Flow. Supports Captive Portal parameters and QR session."""
-    # เก็บ captive portal params ใน HTTP session
-    # Extract client real IP (essential when behind Nginx in Docker)
-    real_ip = ip
+    # Dynamic FortiGate Host resolution
+    effective_fw_host = FORTIGATE_IP
+    target_url = URL or auth_url or url
+    if target_url:
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(target_url)
+            if parsed.hostname:
+                effective_fw_host = parsed.hostname
+        except Exception:
+            pass
+    elif fw_ip:
+        effective_fw_host = fw_ip
+
+    # Extract client real IP (ignore if it is a hostname like 'auth.dtam.moph.go.th')
+    real_ip = ""
+    if ip and not any(c.isalpha() for c in ip):
+        real_ip = ip
+
     if not real_ip:
         x_forwarded_for = request.headers.get("x-forwarded-for")
         if x_forwarded_for:
@@ -385,8 +414,8 @@ async def login(
     request.session['guest_ip'] = real_ip
     if url: request.session['original_url'] = url
     if magic: request.session['fortigate_magic'] = magic
-    if fw_ip: request.session['fortigate_ip'] = fw_ip
-    if auth_url: request.session['auth_url'] = auth_url
+    request.session['fortigate_ip'] = effective_fw_host
+    if target_url: request.session['auth_url'] = target_url
 
     # เก็บ QR session_id ไว้ใน HTTP session เพื่อดึงใน callback
     if qr_session:
