@@ -316,7 +316,7 @@ export default function QRPortal({ keepaliveOnly }) {
       ip: params.get('ip') || params.get('client_ip') || '',
       url: params.get('url') || params.get('redirect_url') || '',
       magic: params.get('magic') || '',
-      fw_ip: fwHost || params.get('fw_ip') || '192.168.254.253',
+      fw_ip: fwHost || params.get('fw_ip') || '',
       type: params.get('type') || '',
     }
     setCaptiveParams(newParams)
@@ -460,7 +460,7 @@ export default function QRPortal({ keepaliveOnly }) {
         <>
           <FortigateAutoSubmitForm
             magic={captiveParams.magic}
-            fwIp={successData.fw_ip || captiveParams.fw_ip}
+            fwIp={captiveParams.fw_ip || successData.fw_ip}
             fwPort={successData.fw_port}
             fwPath={successData.fw_path}
             authUrl={successData.auth_url}
@@ -468,37 +468,39 @@ export default function QRPortal({ keepaliveOnly }) {
             password={successData.password}
             onSubmitted={() => setPhase('keepalive')}
           />
-          <div className="portal-card success-card">
-            <div className="success-icon-wrap">
-              <div className="success-icon">
-                <IconCheck />
+          {phase === 'success' && (
+            <div className="portal-card success-card">
+              <div className="success-icon-wrap">
+                <div className="success-icon">
+                  <IconCheck />
+                </div>
+                <div className="success-ripple" />
               </div>
-              <div className="success-ripple" />
-            </div>
-            <h2 className="success-title">ยืนยันตัวตนสำเร็จ!</h2>
-            <p className="success-sub">ระบบกำลังเชื่อมต่ออินเทอร์เน็ต กรุณารอสักครู่...</p>
-            {successData.user_info && (
-              <div className="user-badge">
-                <span className="user-name">
-                  {successData.user_info.name || successData.user_info.given_name_en}
-                </span>
-                {successData.username && (
-                  <span className="user-username" style={{ display: 'block', fontSize: '14px', color: '#64748b', marginTop: '4px' }}>
-                    Username: <strong>{successData.username}</strong>
+              <h2 className="success-title">ยืนยันตัวตนสำเร็จ!</h2>
+              <p className="success-sub">ระบบกำลังเชื่อมต่ออินเทอร์เน็ต กรุณารอสักครู่...</p>
+              {successData.user_info && (
+                <div className="user-badge">
+                  <span className="user-name">
+                    {successData.user_info.name || successData.user_info.given_name_en}
                   </span>
-                )}
-                <span className="user-pid">
-                  🪪 {successData.user_info.pid ? 'X'.repeat(10) + successData.user_info.pid.slice(-3) : '-'}
-                </span>
+                  {successData.username && (
+                    <span className="user-username" style={{ display: 'block', fontSize: '14px', color: '#64748b', marginTop: '4px' }}>
+                      Username: <strong>{successData.username}</strong>
+                    </span>
+                  )}
+                  <span className="user-pid">
+                    🪪 {successData.user_info.pid ? 'X'.repeat(10) + successData.user_info.pid.slice(-3) : '-'}
+                  </span>
+                </div>
+              )}
+              <div className="connecting-indicator">
+                <div className="dot-pulse">
+                  <span /><span /><span />
+                </div>
+                <span>กำลังนำคุณเข้าสู่เว็บไซต์...</span>
               </div>
-            )}
-            <div className="connecting-indicator">
-              <div className="dot-pulse">
-                <span /><span /><span />
-              </div>
-              <span>กำลังนำคุณเข้าสู่เว็บไซต์...</span>
             </div>
-          </div>
+          )}
         </>
       )}
 
