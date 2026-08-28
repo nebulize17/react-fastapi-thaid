@@ -278,7 +278,7 @@ async def create_qr_session(
         except Exception:
             pass
     elif fw_ip:
-        effective_fw_ip = fw_ip
+        effective_fw_ip = fw_ip.split(":")[0]
 
     # Extract client real IP (ignore if it is a hostname like 'auth.dtam.moph.go.th')
     client_ip = ""
@@ -396,7 +396,7 @@ async def login(
         except Exception:
             pass
     elif fw_ip:
-        effective_fw_host = fw_ip
+        effective_fw_host = fw_ip.split(":")[0]
 
     # Extract client real IP (ignore if it is a hostname like 'auth.dtam.moph.go.th')
     real_ip = ""
