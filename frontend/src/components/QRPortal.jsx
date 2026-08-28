@@ -454,7 +454,7 @@ export default function QRPortal({ keepaliveOnly }) {
     <div className="portal-root">
 
       {/* ── SUCCESS STATE ───────────────────────────────── */}
-      {phase === 'success' && successData && (
+      {(phase === 'success' || phase === 'keepalive') && successData && (
         <>
           <FortigateAutoSubmitForm
             magic={captiveParams.magic}

@@ -804,10 +804,10 @@ async def auth_callback(request: Request, response: Response):
         const form = document.getElementById('auth_form');
         form.submit();
         
-        // 4. นำทางหน้าต่างหลักไปยัง /keepalive ในอีก 1 วินาทีถัดไป
+        // 4. นำทางหน้าต่างหลักไปยัง /keepalive ในอีก 3 วินาทีถัดไป เพื่อให้แน่ใจว่าเบราว์เซอร์ส่ง POST ไป FortiGate สำเร็จก่อนเปลี่ยนหน้า
         setTimeout(function() {{
           window.location.href = '/keepalive';
-        }}, 1000);
+        }}, 3000);
       }} catch (err) {{
         console.error('Error in callback script:', err);
         window.location.href = '/keepalive';
