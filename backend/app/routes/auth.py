@@ -422,8 +422,8 @@ async def login(
         request.session['qr_session_id'] = qr_session
         logger.info(f"QR Login initiated for session: {qr_session}")
 
-    # [ปรับปรุงสำหรับ iOS / Same-Device] สร้าง session_id และบันทึกลงใน qr_sessions เพื่อป้องกัน Cookie Loss บน iOS
-    session_id = f"sd_{uuid.uuid4()}"
+    # [ปรับปรุงสำหรับ iOS / Same-Device] สร้าง session_id แบบ Alphanumeric (ไม่มีขีดกลาง/ขีดล่าง เพื่อให้ผ่านการตรวจสอบของระบบ BORA/ThaiD)
+    session_id = uuid.uuid4().hex
     qr_sessions = request.app.state.qr_sessions
     
     # ล้าง session เก่าที่หมดอายุ
@@ -448,13 +448,14 @@ async def login(
     if redirect_uri.startswith("http://") and "dtam.moph.go.th" in redirect_uri:
         redirect_uri = redirect_uri.replace("http://", "https://", 1)
 
-    # สร้าง ThaiD Authorization URL พร้อมส่ง state=session_id
+    # สร้าง ThaiD Authorization URL พร้อมส่ง state=session_id และ nonce (ให้โครงสร้างตรงตามมาตรฐาน OIDC เหมือนการเรียกด้วย Authlib)
     params = {
         "response_type": "code",
         "client_id": THAID_CLIENT_ID,
         "redirect_uri": redirect_uri,
         "scope": "openid pid title title_en given_name_en family_name_en name name_en",
-        "state": session_id
+        "state": session_id,
+        "nonce": uuid.uuid4().hex
     }
     auth_endpoint = "https://imauth.bora.dopa.go.th/api/v2/oauth2/auth/"
     thaid_url = f"{auth_endpoint}?{urlencode(params, quote_via=quote)}"
