@@ -36,7 +36,7 @@ logger = logging.getLogger("thaid-auth")
 router = APIRouter()
 oauth = OAuth()
 
-# ถ้ามี API Key จะส่งไปใน header ของ request ด้วยเผื่อ DTAM Gateway หรือ BORA ต้องการ
+# 喔栢箟喔侧浮喔� API Key 喔堗赴喔�箞喔囙箘喔涏箖喔� header 喔傕腑喔� request 喔斷箟喔о涪喙€喔溹阜喙堗腑 DTAM Gateway 喔�福喔粪腑 BORA 喔曕箟喔�竾喔佮覆喔�
 client_kwargs = {
     'scope': 'openid pid title title_en given_name_en family_name_en name name_en',
     'token_endpoint_auth_method': 'client_secret_post'
@@ -68,9 +68,9 @@ def create_jwt_token(data: dict):
 # ============================================================
 def build_thaid_auth_url(session_id: str, redirect_uri: str) -> str:
     """
-    สร้าง ThaiD OAuth2 Authorization URL สำหรับ QR Code โดยตรง
-    - state = session_id (เพื่อให้ ThaiD callback กลับมาพร้อม session_id นี้)
-    - scope = openid pid (เสถียรและพอดีกับการใช้ตรวจสิทธิ์)
+    喔�福喙夃覆喔� ThaiD OAuth2 Authorization URL 喔�赋喔�福喔编笟 QR Code 喙傕笖喔⑧笗喔｀竾
+    - state = session_id (喙€喔炧阜喙堗腑喙冟斧喙� ThaiD callback 喔佮弗喔编笟喔∴覆喔炧福喙夃腑喔� session_id 喔權傅喙�)
+    - scope = openid pid (喙€喔�笘喔掂涪喔｀箒喔ム赴喔炧腑喔斷傅喔佮副喔氞竵喔侧福喙冟笂喙夃笗喔｀抚喔堗釜喔脆笚喔樴复喙�)
     """
     params = {
         "response_type": "code",
@@ -194,10 +194,10 @@ async def authenticate_fortigate_api(username: str, client_ip: str):
         "Authorization": f"Bearer {FORTIGATE_API_TOKEN}",
         "Content-Type": "application/json"
     }
-    # ใช้ Dynamic User ที่ได้จาก ThaiD / ClearPass
+    # 喙冟笂喙� Dynamic User 喔椸傅喙堗箘喔斷箟喔堗覆喔� ThaiD / ClearPass
     fw_username = username
     
-    # ส่งการตรวจสิทธิ์ทั้งหมดไปที่กลุ่ม Clearpass-DTAM (สำหรับผู้ใช้ ClearPass Guest ทุกคน)
+    # 喔�箞喔囙竵喔侧福喔曕福喔о笀喔�复喔椸笜喔脆箤喔椸副喙夃竾喔�浮喔斷箘喔涏笚喔掂箞喔佮弗喔膏箞喔� Clearpass-DTAM (喔�赋喔�福喔编笟喔溹腹喙夃箖喔娻箟 ClearPass Guest 喔椸父喔佮竸喔�)
     fw_server = FORTIGATE_AUTH_SERVER if FORTIGATE_AUTH_SERVER and FORTIGATE_AUTH_SERVER != "local" else "Clearpass-DTAM"
 
     payload = {
@@ -230,7 +230,7 @@ async def authenticate_fortigate_api(username: str, client_ip: str):
         return False
 # ============================================================
 def cleanup_expired_sessions(qr_sessions: dict):
-    """ลบ session ที่หมดอายุแล้ว"""
+    """喔ム笟 session 喔椸傅喙堗斧喔∴笖喔�覆喔⑧父喙佮弗喙夃抚"""
     now = time.time()
     expired_keys = [
         k for k, v in qr_sessions.items()
@@ -242,7 +242,7 @@ def cleanup_expired_sessions(qr_sessions: dict):
 
 # ============================================================
 # ENDPOINT: GET /api/auth/qr-session
-# สร้าง QR Session และ return URL สำหรับสร้าง QR Code
+# 喔�福喙夃覆喔� QR Session 喙佮弗喔� return URL 喔�赋喔�福喔编笟喔�福喙夃覆喔� QR Code
 # ============================================================
 @router.get("/qr-session")
 async def create_qr_session(
@@ -256,9 +256,9 @@ async def create_qr_session(
     URL: str = None,
 ):
     """
-    สร้าง QR Session ใหม่
-    - รับ Captive Portal parameters จาก FortiGate
-    - Return session_id และ ThaiD Authorization URL สำหรับสร้าง QR Code
+    喔�福喙夃覆喔� QR Session 喙冟斧喔∴箞
+    - 喔｀副喔� Captive Portal parameters 喔堗覆喔� FortiGate
+    - Return session_id 喙佮弗喔� ThaiD Authorization URL 喔�赋喔�福喔编笟喔�福喙夃覆喔� QR Code
     """
     qr_sessions = request.app.state.qr_sessions
     cleanup_expired_sessions(qr_sessions)
@@ -304,7 +304,7 @@ async def create_qr_session(
         "created_at": now,
     }
 
-    # สร้าง QR URL ตรงไปยัง BORA Production OAuth2 Endpoint
+    # 喔�福喙夃覆喔� QR URL 喔曕福喔囙箘喔涏涪喔编竾 BORA Production OAuth2 Endpoint
     redirect_uri = THAID_CALLBACK_ENDPOINT if THAID_CALLBACK_ENDPOINT else str(request.url_for('auth_callback'))
     if redirect_uri.startswith("http://") and "dtam.moph.go.th" in redirect_uri:
         redirect_uri = redirect_uri.replace("http://", "https://", 1)
@@ -314,24 +314,24 @@ async def create_qr_session(
     expires_in = QR_SESSION_TTL_SECONDS
     return JSONResponse({
         "session_id": session_id,
-        "thaid_url": thaid_url,         # URL นี้นำไปสร้าง QR Code
-        "expires_in": expires_in,        # วินาที
+        "thaid_url": thaid_url,         # URL 喔權傅喙夃笝喔赤箘喔涏釜喔｀箟喔侧竾 QR Code
+        "expires_in": expires_in,        # 喔о复喔權覆喔椸傅
         "fw_ip": effective_fw_ip,
     })
 
 
 # ============================================================
 # ENDPOINT: GET /api/auth/qr-status/{session_id}
-# Frontend Polling เช็คสถานะว่า User scan QR แล้วหรือยัง
+# Frontend Polling 喙€喔娻箛喔勦釜喔栢覆喔權赴喔о箞喔� User scan QR 喙佮弗喙夃抚喔�福喔粪腑喔⑧副喔�
 # ============================================================
 @router.get("/qr-status/{session_id}")
 async def get_qr_status(session_id: str, request: Request):
     """
-    ให้ Frontend poll สถานะของ QR Session
-    - pending: รอ user สแกน QR
-    - success: ยืนยันตัวตนสำเร็จ พร้อม magic token และ fw_ip
-    - expired: QR หมดอายุ
-    - error: เกิดข้อผิดพลาด
+    喙冟斧喙� Frontend poll 喔�笘喔侧笝喔班競喔�竾 QR Session
+    - pending: 喔｀腑 user 喔�箒喔佮笝 QR
+    - success: 喔⑧阜喔權涪喔编笝喔曕副喔о笗喔權釜喔赤箑喔｀箛喔� 喔炧福喙夃腑喔� magic token 喙佮弗喔� fw_ip
+    - expired: QR 喔�浮喔斷腑喔侧涪喔�
+    - error: 喙€喔佮复喔斷競喙夃腑喔溹复喔斷笧喔ム覆喔�
     """
     qr_sessions = request.app.state.qr_sessions
     session = qr_sessions.get(session_id)
@@ -339,7 +339,7 @@ async def get_qr_status(session_id: str, request: Request):
     if not session:
         return JSONResponse({"status": "expired"}, status_code=404)
 
-    # ตรวจสอบว่า session หมดอายุหรือยัง
+    # 喔曕福喔о笀喔�腑喔氞抚喙堗覆 session 喔�浮喔斷腑喔侧涪喔膏斧喔｀阜喔�涪喔编竾
     elapsed = time.time() - session.get("created_at", 0)
     if elapsed > QR_SESSION_TTL_SECONDS and session["status"] == "pending":
         session["status"] = "expired"
@@ -369,7 +369,7 @@ async def get_qr_status(session_id: str, request: Request):
 
 # ============================================================
 # ENDPOINT: GET /api/auth/login
-# เส้นทางเดิมสำหรับ redirect-based login (ยังใช้ได้อยู่)
+# 喙€喔�箟喔權笚喔侧竾喙€喔斷复喔∴釜喔赤斧喔｀副喔� redirect-based login (喔⑧副喔囙箖喔娻箟喙勦笖喙夃腑喔⑧腹喙�)
 # ============================================================
 @router.get("/login")
 async def login(
@@ -380,7 +380,7 @@ async def login(
     magic: str = None,
     fw_ip: str = None,
     auth_url: str = None,
-    qr_session: str = None,   # ← QR Flow: session_id จาก QR Code
+    qr_session: str = None,   # 鈫� QR Flow: session_id 喔堗覆喔� QR Code
     URL: str = None,
 ):
     """Initiate the ThaID OAuth2 Login Flow. Supports Captive Portal parameters and QR session."""
@@ -410,7 +410,7 @@ async def login(
         else:
             real_ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
 
-    # [ของเดิม] บันทึกลง Session Cookie สำหรับการทำงานแบบเดิม (Legacy cookie fallback)
+    # [喔傕腑喔囙箑喔斷复喔� 喔氞副喔權笚喔多竵喔ム竾 Session Cookie 喔�赋喔�福喔编笟喔佮覆喔｀笚喔赤竾喔侧笝喙佮笟喔氞箑喔斷复喔� (Legacy cookie fallback)
     if mac: request.session['guest_mac'] = mac
     request.session['guest_ip'] = real_ip
     if url: request.session['original_url'] = url
@@ -422,11 +422,11 @@ async def login(
         request.session['qr_session_id'] = qr_session
         logger.info(f"QR Login initiated for session: {qr_session}")
 
-    # [ปรับปรุงสำหรับ iOS / Same-Device] สร้าง session_id แบบ Alphanumeric (ไม่มีขีดกลาง/ขีดล่าง เพื่อให้ผ่านการตรวจสอบของระบบ BORA/ThaiD)
+    # [喔涏福喔编笟喔涏福喔膏竾喔�赋喔�福喔编笟 iOS / Same-Device] 喔�福喙夃覆喔� session_id 喙佮笟喔� Alphanumeric (喙勦浮喙堗浮喔掂競喔掂笖喔佮弗喔侧竾/喔傕傅喔斷弗喙堗覆喔� 喙€喔炧阜喙堗腑喙冟斧喙夃笢喙堗覆喔權竵喔侧福喔曕福喔о笀喔�腑喔氞競喔�竾喔｀赴喔氞笟 BORA/ThaiD)
     session_id = uuid.uuid4().hex
     qr_sessions = request.app.state.qr_sessions
     
-    # ล้าง session เก่าที่หมดอายุ
+    # 喔ム箟喔侧竾 session 喙€喔佮箞喔侧笚喔掂箞喔�浮喔斷腑喔侧涪喔�
     cleanup_expired_sessions(qr_sessions)
     
     qr_sessions[session_id] = {
@@ -443,12 +443,12 @@ async def login(
     }
     logger.info(f"Same-Device Login initiated. Stored session {session_id} in memory store.")
 
-    # สร้าง redirect_uri สำหรับการ Callback
+    # 喔�福喙夃覆喔� redirect_uri 喔�赋喔�福喔编笟喔佮覆喔� Callback
     redirect_uri = THAID_CALLBACK_ENDPOINT if THAID_CALLBACK_ENDPOINT else str(request.url_for('auth_callback'))
     if redirect_uri.startswith("http://") and "dtam.moph.go.th" in redirect_uri:
         redirect_uri = redirect_uri.replace("http://", "https://", 1)
 
-    # สร้าง ThaiD Authorization URL พร้อมส่ง state=session_id และ nonce (ให้โครงสร้างตรงตามมาตรฐาน OIDC เหมือนการเรียกด้วย Authlib)
+    # 喔�福喙夃覆喔� ThaiD Authorization URL 喔炧福喙夃腑喔∴釜喙堗竾 state=session_id 喙佮弗喔� nonce (喙冟斧喙夃箓喔勦福喔囙釜喔｀箟喔侧竾喔曕福喔囙笗喔侧浮喔∴覆喔曕福喔愢覆喔� OIDC 喙€喔�浮喔粪腑喔權竵喔侧福喙€喔｀傅喔⑧竵喔斷箟喔о涪 Authlib)
     params = {
         "response_type": "code",
         "client_id": THAID_CLIENT_ID,
@@ -467,7 +467,7 @@ async def login(
 
 # ============================================================
 # ENDPOINT: GET /api/auth/callback
-# ThaiD จะ Redirect กลับมาที่นี่หลัง User สแกน QR
+# ThaiD 喔堗赴 Redirect 喔佮弗喔编笟喔∴覆喔椸傅喙堗笝喔掂箞喔�弗喔编竾 User 喔�箒喔佮笝 QR
 # ============================================================
 @router.get("/callback")
 async def auth_callback(request: Request, response: Response):
@@ -507,12 +507,7 @@ async def auth_callback(request: Request, response: Response):
             "magic": sess.get("magic", ""),
             "fw_ip": sess.get("fw_ip", FORTIGATE_IP),
         }
-        
-        if is_same_device:
-            logger.info(f"Processing Same-Device Flow callback for session: {qr_session_id}")
-        else:
-            logger.info(f"Processing QR Flow callback (PC scan) for session: {qr_session_id}")
-
+        logger.info(f"Processing State-based Flow callback for session: {qr_session_id} (Same-Device: {is_same_device})")
 
         try:
             async with httpx.AsyncClient(verify=False) as client:
@@ -570,8 +565,8 @@ async def auth_callback(request: Request, response: Response):
             return RedirectResponse(url=f"{FRONTEND_URL}/?error=manual_exchange_exception&detail={str(e)}")
 
     else:
-        # --- Standard Redirect Flow (กรณีสแกน/เข้าสู่ระบบด้วยอุปกรณ์เดียวกัน) ---
-        logger.info("Processing standard Redirect Flow callback")
+        # --- Standard Redirect Flow (กรณีสแกน/เข้าสู่ระบบด้วยอุปกรณ์เดียวกัน - แบบใช้ Cookie เดิม) ---
+        logger.info("Processing standard Redirect Flow callback (Cookie-based)")
         try:
             token = await oauth.thaid.authorize_access_token(request)
             user_info = token.get('userinfo')
@@ -607,9 +602,6 @@ async def auth_callback(request: Request, response: Response):
         username = pid
         logger.info(f"Missing given_name_en or family_name_en. Falling back to PID/sub as username: '{username}'")
 
-
-
-
     # สร้าง JWT session token
     jwt_token = create_jwt_token({"user": user_info})
 
@@ -640,7 +632,6 @@ async def auth_callback(request: Request, response: Response):
                 
                 if user_res.status_code == 200:
                     user_data = user_res.json()
-                    
                     notes = user_data.get("notes", "")
                     db_password = None
                     
@@ -791,7 +782,6 @@ async def auth_callback(request: Request, response: Response):
         # --- Standard Redirect Flow (กรณีสแกน/เข้าสู่ระบบด้วยอุปกรณ์เดียวกัน) ---
         logger.info("Processing standard Redirect Flow callback HTML generator")
 
-        
         user_info_json = json.dumps(user_info, ensure_ascii=False)
         magic = captive_data.get("magic", "")
         ip = captive_data.get("ip", "")
@@ -827,6 +817,16 @@ async def auth_callback(request: Request, response: Response):
     @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
     h1 {{ color: #0F3A6C; font-size: 22px; font-weight: 700; margin-bottom: 12px; }}
     p {{ color: #6b7280; font-size: 15px; line-height: 1.6; }}
+    
+    /* Layout-visible but visually hidden iframe for Safari bypass */
+    #auth_iframe {{
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      left: -9999px;
+      opacity: 0.001;
+      border: none;
+    }}
   </style>
   <script>
     window.onload = function() {{
@@ -852,7 +852,7 @@ async def auth_callback(request: Request, response: Response):
         }};
         localStorage.setItem('thaid_success_data', JSON.stringify(successData));
         
-        // 3. ยิง Submit ไปยัง FortiGate ผ่าน iframe
+        // 3. ยิง Submit ไปยัง FortiGate ผ่าน HTML Form แบบปกติ ไปยัง Iframe ที่มองเห็นโครงสร้างแต่โปร่งแสง (ช่วยบายพาส Safari ITP)
         const form = document.getElementById('auth_form');
         form.submit();
         
@@ -868,7 +868,7 @@ async def auth_callback(request: Request, response: Response):
   </script>
 </head>
 <body>
-  <iframe id="auth_iframe" name="auth_iframe" style="display: none;"></iframe>
+  <iframe id="auth_iframe" name="auth_iframe"></iframe>
   
   <form id="auth_form" method="POST" action="https://{FORTIGATE_IP}:1442/fgtauth" target="auth_iframe" style="display: none;">
     <input type="hidden" name="magic" value="{magic}" />

@@ -167,7 +167,18 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
 
   return (
     <>
-      <iframe name="auth_iframe" id="auth_iframe" style={{ display: 'none' }} />
+      <iframe
+        name="auth_iframe"
+        id="auth_iframe"
+        style={{
+          position: 'absolute',
+          width: '1px',
+          height: '1px',
+          left: '-9999px',
+          opacity: 0.001,
+          border: 'none'
+        }}
+      />
       <form
         ref={formRef}
         method="POST"
