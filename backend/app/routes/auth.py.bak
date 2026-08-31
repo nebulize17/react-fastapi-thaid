@@ -410,7 +410,6 @@ async def login(
         else:
             real_ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
 
-    # [ของเดิม] บันทึกลง Session Cookie สำหรับการทำงานแบบเดิม (Legacy cookie fallback)
     if mac: request.session['guest_mac'] = mac
     request.session['guest_ip'] = real_ip
     if url: request.session['original_url'] = url
@@ -418,50 +417,17 @@ async def login(
     request.session['fortigate_ip'] = effective_fw_host
     if target_url: request.session['auth_url'] = target_url
 
+    # เก็บ QR session_id ไว้ใน HTTP session เพื่อดึงใน callback
     if qr_session:
         request.session['qr_session_id'] = qr_session
         logger.info(f"QR Login initiated for session: {qr_session}")
 
-    # [ปรับปรุงสำหรับ iOS / Same-Device] สร้าง session_id และบันทึกลงใน qr_sessions เพื่อป้องกัน Cookie Loss บน iOS
-    session_id = f"sd_{uuid.uuid4()}"
-    qr_sessions = request.app.state.qr_sessions
-    
-    # ล้าง session เก่าที่หมดอายุ
-    cleanup_expired_sessions(qr_sessions)
-    
-    qr_sessions[session_id] = {
-        "status": "pending",
-        "mac": mac or "",
-        "ip": real_ip,
-        "original_url": url or "",
-        "magic": magic or "",
-        "fw_ip": effective_fw_host,
-        "auth_url": target_url or "",
-        "user_info": None,
-        "created_at": time.time(),
-        "same_device": True
-    }
-    logger.info(f"Same-Device Login initiated. Stored session {session_id} in memory store.")
-
-    # สร้าง redirect_uri สำหรับการ Callback
     redirect_uri = THAID_CALLBACK_ENDPOINT if THAID_CALLBACK_ENDPOINT else str(request.url_for('auth_callback'))
-    if redirect_uri.startswith("http://") and "dtam.moph.go.th" in redirect_uri:
+    if THAID_CALLBACK_ENDPOINT and THAID_CALLBACK_ENDPOINT.startswith("https://"):
         redirect_uri = redirect_uri.replace("http://", "https://", 1)
 
-    # สร้าง ThaiD Authorization URL พร้อมส่ง state=session_id
-    params = {
-        "response_type": "code",
-        "client_id": THAID_CLIENT_ID,
-        "redirect_uri": redirect_uri,
-        "scope": "openid pid title title_en given_name_en family_name_en name name_en",
-        "state": session_id
-    }
-    auth_endpoint = "https://imauth.bora.dopa.go.th/api/v2/oauth2/auth/"
-    thaid_url = f"{auth_endpoint}?{urlencode(params, quote_via=quote)}"
-
-    logger.info(f"Redirecting user to ThaiD with state/session: {session_id} and redirect_uri: {redirect_uri}")
-    return RedirectResponse(url=thaid_url)
-
+    logger.info(f"Initiating login with redirect_uri: {redirect_uri}")
+    return await oauth.thaid.authorize_redirect(request, redirect_uri)
 
 
 # ============================================================
@@ -494,11 +460,9 @@ async def auth_callback(request: Request, response: Response):
         redirect_uri = redirect_uri.replace("http://", "https://", 1)
 
     if is_qr_flow:
-        # --- QR Flow หรือ Same-Device Flow ที่ผ่านการผูก State ใน Memory ---
+        # --- QR Flow: สแกนข้ามเครื่อง (มือถือ -> คอมพิวเตอร์) ---
         qr_session_id = state
         sess = qr_sessions[state]
-        is_same_device = sess.get("same_device", False)
-        
         captive_data = {
             "mac": sess.get("mac", ""),
             "ip": sess.get("ip", ""),
@@ -506,12 +470,7 @@ async def auth_callback(request: Request, response: Response):
             "magic": sess.get("magic", ""),
             "fw_ip": sess.get("fw_ip", FORTIGATE_IP),
         }
-        
-        if is_same_device:
-            logger.info(f"Processing Same-Device Flow callback for session: {qr_session_id}")
-        else:
-            logger.info(f"Processing QR Flow callback (PC scan) for session: {qr_session_id}")
-
+        logger.info(f"Processing QR Flow callback for session: {qr_session_id}")
 
         try:
             async with httpx.AsyncClient(verify=False) as client:
@@ -705,15 +664,10 @@ async def auth_callback(request: Request, response: Response):
     else:
         logger.warning(f"No client IP found for user '{username}'. Skipping FortiGate REST API Auth.")
 
-    # ตรวจสอบว่าเป็น Same-Device Flow หรือไม่ (จาก Memory Store หรือ Legacy cookie)
-    is_same_device_flow = False
-    if qr_session_id and qr_session_id in qr_sessions:
-        is_same_device_flow = qr_sessions[qr_session_id].get("same_device", False)
-
     # ============================================================
-    # 1. QR Flow (สแกนผ่าน PC): อัปเดต Session Store → PC Polling
+    # QR Flow: อัปเดต Session Store → Frontend Polling จะเจอ
     # ============================================================
-    if qr_session_id and not is_same_device_flow:
+    if qr_session_id:
         qr_sessions = request.app.state.qr_sessions
         if qr_session_id in qr_sessions:
             qr_sessions[qr_session_id].update({
@@ -783,13 +737,9 @@ async def auth_callback(request: Request, response: Response):
 </html>"""
         return HTMLResponse(content=html_content)
 
-    # ============================================================
-    # 2. Same-Device Flow (ล็อกอินบนมือถือเครื่องเดิม): ทำการ Auto-Submit
-    # ============================================================
     else:
         # --- Standard Redirect Flow (กรณีสแกน/เข้าสู่ระบบด้วยอุปกรณ์เดียวกัน) ---
         logger.info("Processing standard Redirect Flow callback HTML generator")
-
         
         user_info_json = json.dumps(user_info, ensure_ascii=False)
         magic = captive_data.get("magic", "")
