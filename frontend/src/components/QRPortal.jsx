@@ -570,8 +570,7 @@ export default function QRPortal({ keepaliveOnly }) {
               className="logout-btn"
               onClick={() => {
                 const magic = captiveParams.magic || '';
-                const fwIp = captiveParams.fw_ip || '';
-                window.location.href = `/logout?magic=${magic}&fw_ip=${fwIp}`;
+                window.location.href = `/logout?magic=${magic}`;
               }}
             >
               <IconLogOut />

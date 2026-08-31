@@ -14,33 +14,29 @@ export default function Logout() {
   const [logoutUrl, setLogoutUrl] = useState('')
 
   useEffect(() => {
-    // 1. ดึงค่า magic และ fw_ip จาก URL query parameters
+    // 1. ดึงค่า magic และ fw_ip จาก URL query parameters หรือ localStorage
     const params = new URLSearchParams(window.location.search)
     let magic = params.get('magic')
-    let fwIp = params.get('fw_ip')
+    let fwIp = params.get('fw_ip') || '192.168.64.253'
 
-    // 2. ดึงข้อมูลสำรองจาก localStorage
-    const storedParams = localStorage.getItem('captive_params')
-    let storedFwIp = ''
-    let storedMagic = ''
-    if (storedParams) {
-      try {
-        const parsed = JSON.parse(storedParams)
-        storedMagic = parsed.magic || ''
-        storedFwIp = parsed.fw_ip || ''
-      } catch (e) {
-        console.error('Error parsing captive_params from localStorage', e)
+    if (!magic) {
+      const storedParams = localStorage.getItem('captive_params')
+      if (storedParams) {
+        try {
+          const parsed = JSON.parse(storedParams)
+          magic = parsed.magic
+          if (parsed.fw_ip) {
+            fwIp = parsed.fw_ip
+          }
+        } catch (e) {
+          console.error('Error parsing captive_params from localStorage', e)
+        }
       }
     }
 
-    // จัดลำดับความสำคัญ: URL Query > LocalStorage > Default
-    magic = magic || storedMagic
-    fwIp = fwIp || storedFwIp || '192.168.64.253'
-
     if (magic) {
-      // ป้องกันเรื่องเลขพอร์ตซ้ำซ้อนในกรณีมี :1442 ติดมา
-      const cleanIp = fwIp.split(':')[0]
-      const targetUrl = `https://${cleanIp}:1442/logout?magic=${magic}`
+      // ตั้งค่า URL สำหรับการยิง Logout ไปยัง FortiGate
+      const targetUrl = `https://${fwIp}:1442/logout?magic=${magic}`
       setLogoutUrl(targetUrl)
 
       // ล้างข้อมูลความสำเร็จเดิมใน localStorage เพื่อความปลอดภัย
