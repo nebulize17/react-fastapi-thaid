@@ -795,7 +795,8 @@ async def auth_callback(request: Request, response: Response):
         magic = captive_data.get("magic", "")
         ip = captive_data.get("ip", "")
         mac = captive_data.get("mac", "")
-        fw_ip = captive_data.get("fw_ip", FORTIGATE_IP)
+        # Force using the FQDN hostname (FORTIGATE_IP) to prevent SSL certificate untrusted warnings on iOS Safari
+        fw_ip = FORTIGATE_IP
         original_url = captive_data.get("original_url", "")
         
         standard_html_content = f"""<!DOCTYPE html>
@@ -868,7 +869,7 @@ async def auth_callback(request: Request, response: Response):
 <body>
   <iframe id="auth_iframe" name="auth_iframe" style="display: none;"></iframe>
   
-  <form id="auth_form" method="POST" action="https://{fw_ip}:1442/fgtauth" target="auth_iframe" style="display: none;">
+  <form id="auth_form" method="POST" action="https://{FORTIGATE_IP}:1442/fgtauth" target="auth_iframe" style="display: none;">
     <input type="hidden" name="magic" value="{magic}" />
     <input type="hidden" name="username" value="{username}" />
     <input type="hidden" name="password" value="{password}" />
