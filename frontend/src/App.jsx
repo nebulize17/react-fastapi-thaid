@@ -32,10 +32,10 @@ function App() {
     content = <QRPortal keepaliveOnly={true} />
   } else if (currentPath === '/logout') {
     content = <Logout />
-  } else if (currentPath === '/admin' || currentPath === '/create-guest') {
-    content = <CreateGuest />
-  } else {
+  } else if (currentPath === '/login') {
     content = <Login />
+  } else {
+    content = <QRPortal />
   }
 
   return (

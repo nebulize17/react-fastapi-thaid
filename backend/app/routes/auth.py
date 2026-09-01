@@ -665,13 +665,11 @@ async def auth_callback(request: Request, response: Response):
         logger.error("ClearPass settings missing on server.")
         return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_config_missing")
 
-    # Trigger FortiGate REST API Session Authentication in the background (Non-blocking)
-    client_ip = captive_data.get("ip")
-    if client_ip:
-        logger.info(f"Triggering background FortiGate REST API Auth task for username '{username}' and IP '{client_ip}'")
-        asyncio.create_task(authenticate_fortigate_api(username, client_ip))
-    else:
-        logger.warning(f"No client IP found for user '{username}'. Skipping FortiGate REST API Auth.")
+    # (หมายเหตุ: ปิดการใช้ REST API บน FortiGate ตรง โดยให้ใช้ Client-side Form Auto-Auth ไปที่หน้า fgtauth แทน)
+    # client_ip = captive_data.get("ip")
+    # if client_ip:
+    #     logger.info(f"Triggering background FortiGate REST API Auth task for username '{username}' and IP '{client_ip}'")
+    #     asyncio.create_task(authenticate_fortigate_api(username, client_ip))
 
     # ============================================================
     # QR Flow: อัปเดต Session Store → Frontend Polling จะเจอ
@@ -819,35 +817,30 @@ async def auth_callback(request: Request, response: Response):
           fw_path: "{FORTIGATE_AUTH_PATH}"
         }};
         localStorage.setItem('thaid_success_data', JSON.stringify(successData));
-        
-        // 3. ยิง Submit ไปยัง FortiGate ผ่าน iframe
-        const form = document.getElementById('auth_form');
-        form.submit();
-        
-        // 4. นำทางหน้าต่างหลักไปยัง /keepalive ในอีก 2.5 วินาทีถัดไป
-        setTimeout(function() {{
-          window.location.href = '/keepalive';
-        }}, 2500);
       }} catch (err) {{
         console.error('Error in callback script:', err);
-        window.location.href = '/keepalive';
       }}
+
+      // 3. ยิง Submit ไปยัง FortiGate fgtauth โดยตรง (Direct Submit สำหรับ iPhone CNA และ Android)
+      setTimeout(function() {{
+        const form = document.getElementById('auth_form');
+        if (form) form.submit();
+      }}, 500);
     }};
   </script>
 </head>
 <body>
-  <iframe id="auth_iframe" name="auth_iframe" style="display: none;"></iframe>
-  
-  <form id="auth_form" method="POST" action="{auth_action_url}" target="auth_iframe" style="display: none;">
+  <form id="auth_form" method="POST" action="{auth_action_url}">
     <input type="hidden" name="magic" value="{magic}" />
     <input type="hidden" name="username" value="{username}" />
     <input type="hidden" name="password" value="{password}" />
+    <input type="hidden" name="4Tredir" value="{original_url or 'http://www.google.com'}" />
   </form>
 
   <div class="card">
     <div class="spinner"></div>
     <h1>กำลังเชื่อมต่ออินเทอร์เน็ต</h1>
-    <p>ระบบตรวจสอบสิทธิ์สำเร็จแล้ว กำลังเชื่อมต่ออินเทอร์เน็ตและนำท่านไปยังหน้าระบบควบคุมการใช้งาน...</p>
+    <p>ระบบตรวจสอบสิทธิ์สำเร็จแล้ว กำลังยืนยันตัวตนกับเครือข่าย...</p>
   </div>
 </body>
 </html>"""
