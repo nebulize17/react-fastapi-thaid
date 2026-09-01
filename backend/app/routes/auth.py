@@ -127,11 +127,19 @@ async def sync_cppm_user(username: str, password: str, user_info: dict = None) -
 
     user_info = user_info or {}
     pid = user_info.get("pid") or user_info.get("sub", "")
-    thai_name = user_info.get("name", "")
-    english_name = user_info.get("name_en", "")
-    title_th = user_info.get("title", "")
-    full_thai_name = f"{title_th} {thai_name}".strip() if title_th else thai_name
-    visitor_name = full_thai_name or english_name or f"ThaiD User {username}"
+    thai_name = (user_info.get("name") or "").strip()
+    english_name = (user_info.get("name_en") or "").strip()
+    title_th = (user_info.get("title") or "").strip()
+    
+    if thai_name:
+        if title_th and not thai_name.startswith(title_th):
+            full_thai_name = f"{title_th} {thai_name}"
+        else:
+            full_thai_name = thai_name
+    else:
+        full_thai_name = english_name or f"ThaiD User {username}"
+    
+    visitor_name = full_thai_name
     
     # Mask PID for security (e.g. 1101500387514 -> 110XXXXXX7514)
     masked_pid = pid[:3] + "X" * (len(pid) - 6) + pid[-3:] if len(pid) >= 8 else ("X" * len(pid) if pid else "N/A")
@@ -181,7 +189,8 @@ async def sync_cppm_user(username: str, password: str, user_info: dict = None) -
                     "password": password,
                     "visitor_name": visitor_name,
                     "notes": notes,
-                    "expire_after": 480
+                    "expire_after": 480,
+                    "role_id": 2
                 }
                 patch_res = await client.patch(patch_url, json=patch_payload, headers=headers, timeout=10)
                 if patch_res.status_code in [200, 204]:
@@ -197,7 +206,8 @@ async def sync_cppm_user(username: str, password: str, user_info: dict = None) -
                 "password": password,
                 "visitor_name": visitor_name,
                 "notes": notes,
-                "expire_after": 480
+                "expire_after": 480,
+                "role_id": 2
             }
             create_res = await client.post(search_url, json=user_payload, headers=headers, timeout=10)
             if create_res.status_code in [200, 201]:
