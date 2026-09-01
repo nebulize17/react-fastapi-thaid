@@ -829,9 +829,27 @@ async def auth_callback(request: Request, response: Response):
         console.error('Error in callback script:', err);
       }}
 
-      // 3. ยิงคำขอยืนยันตัวตนไปยัง FortiGate ในเบื้องหลังผ่าน iframe
+      // 3. ยิงคำขอยืนยันตัวตนไปยัง FortiGate (ใช้ทั้ง fetch no-cors และ form submit เพื่อรองรับทุกเบราว์เซอร์รวมถึง iOS Safari)
       const magicVal = {json.dumps(magic)};
-      if (magicVal) {{
+      const authUrl = {json.dumps(auth_action_url)};
+      const uVal = {json.dumps(username)};
+      const pVal = {json.dumps(password)};
+
+      if (magicVal && authUrl) {{
+        // ส่งผ่าน fetch API (โหมด no-cors) ซึ่ง iOS Safari อนุญาตให้ส่งคำขอไปยังพอร์ต :1442
+        try {{
+          const postBody = new URLSearchParams();
+          postBody.append('magic', magicVal);
+          postBody.append('username', uVal);
+          postBody.append('password', pVal);
+          fetch(authUrl, {{
+            method: 'POST',
+            body: postBody,
+            mode: 'no-cors'
+          }}).catch(function(e) {{ console.log('fetch handled', e); }});
+        }} catch(err) {{}}
+
+        // ยิงผ่าน form submit เสริมอีกทางหนึ่ง
         try {{
           const form = document.getElementById('auth_form');
           if (form) form.submit();
