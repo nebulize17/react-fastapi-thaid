@@ -237,7 +237,7 @@ async def sync_cppm_user(username: str, password: str, user_info: dict = None) -
 # ============================================================
 # Helper: FortiGate REST API Authentication
 # ============================================================
-async def authenticate_fortigate_api(username: str, client_ip: str):
+async def authenticate_fortigate_api(username: str, client_ip: str) -> bool:
     """
     Authenticate the user session directly on FortiGate via REST API.
     Endpoint: POST /api/v2/monitor/user/firewall/auth
@@ -250,44 +250,46 @@ async def authenticate_fortigate_api(username: str, client_ip: str):
         logger.warning("Client IP is missing. Cannot authenticate session via REST API.")
         return False
 
-    # ระบุ IP ภายในของ FortiGate สำหรับยิง REST API จากเซิร์ฟเวอร์ Backend (10.1.2.77 -> 10.1.2.254)
-    api_host = os.getenv("FORTIGATE_API_HOST", "10.1.2.254")
-    url = f"https://{api_host}/api/v2/monitor/user/firewall/auth"
+    api_hosts = [
+        os.getenv("FORTIGATE_API_HOST", "10.1.2.254"),
+        "10.1.2.254",
+        "10.1.1.254",
+        "192.168.254.253"
+    ]
+    seen = set()
+    hosts = [h for h in api_hosts if h and not (h in seen or seen.add(h))]
+
+    fw_username = username
+    server_names = [FORTIGATE_AUTH_SERVER or "Clearpass-ThaiD", "Clearpass-DTAM", ""]
+
     headers = {
         "Authorization": f"Bearer {FORTIGATE_API_TOKEN}",
         "Content-Type": "application/json"
     }
-    fw_username = username
-    fw_server = FORTIGATE_AUTH_SERVER or "Clearpass-ThaiD"
 
-    payload = {
-        "ip": client_ip,
-        "username": fw_username,
-        "server": fw_server
-    }
-
-    logger.info(f"Sending FortiGate REST API Auth for user '{fw_username}' (IP: {client_ip}) to {url}")
     try:
-        # Disable SSL verification since FortiGate might use self-signed certs in PoC
         async with httpx.AsyncClient(verify=False) as client:
-            res = await client.post(url, json=payload, headers=headers, timeout=10)
-            logger.info(f"FortiGate REST API response status: {res.status_code}")
-            
-            try:
-                res_data = res.json()
-                logger.info(f"FortiGate REST API response: {json.dumps(res_data)}")
-            except Exception:
-                logger.info(f"FortiGate REST API raw response: {res.text}")
+            for host in hosts:
+                for s_name in server_names:
+                    url = f"https://{host}/api/v2/monitor/user/firewall/auth"
+                    payload = {"ip": client_ip, "username": fw_username}
+                    if s_name:
+                        payload["server"] = s_name
 
-            if res.status_code in [200, 201]:
-                logger.info(f"Successfully authenticated session on FortiGate via REST API for user '{username}'")
-                return True
-            else:
-                logger.error(f"FortiGate REST API Authentication Failed: {res.text}")
-                return False
+                    try:
+                        logger.info(f"Attempting FortiGate REST API Auth for '{fw_username}' (IP: {client_ip}) on {url} (server: {s_name or 'None'})")
+                        res = await client.post(url, json=payload, headers=headers, params={"access_token": FORTIGATE_API_TOKEN}, timeout=4)
+                        logger.info(f"FortiGate API response ({res.status_code}): {res.text}")
+                        if res.status_code in [200, 201]:
+                            logger.info(f"Successfully authenticated on FortiGate via REST API on {host}!")
+                            return True
+                    except Exception as req_err:
+                        logger.warning(f"Error trying FortiGate API on {host}: {str(req_err)}")
+                        continue
     except Exception as e:
         logger.error(f"Error calling FortiGate REST API: {str(e)}")
         return False
+    return False
 
 
 # ============================================================
@@ -670,11 +672,14 @@ async def auth_callback(request: Request, response: Response):
         "auth_url": sess.get("auth_url") or request.session.get("auth_url", ""),
     }
 
-    # ยิง FortiGate REST API ในเบื้องหลังคู่ขนานเพื่อการันตีการเปิดสิทธิ์ 100%
+    # ปลดล็อกสิทธิ์บน FortiGate REST API ทันที (Synchronous) เพื่อการันตีว่า Firewall เปิดเน็ตให้ทันทีก่อนส่งหน้าเว็บกลับไป
     client_ip = captive_data.get("ip")
     if client_ip and FORTIGATE_API_TOKEN:
-        logger.info(f"Triggering background FortiGate REST API Auth for username '{username}' and IP '{client_ip}'")
-        asyncio.create_task(authenticate_fortigate_api(username, client_ip))
+        logger.info(f"Authenticating session on FortiGate REST API for username '{username}' and IP '{client_ip}'")
+        try:
+            await authenticate_fortigate_api(username, client_ip)
+        except Exception as api_err:
+            logger.error(f"FortiGate API Auth error: {str(api_err)}")
 
     # ============================================================
     # QR Flow vs Direct Flow Branching
@@ -761,6 +766,10 @@ async def auth_callback(request: Request, response: Response):
         fw_ip = captive_data.get("fw_ip", FORTIGATE_IP)
         original_url = captive_data.get("original_url", "")
         
+        user_agent = request.headers.get("user-agent", "").lower()
+        is_ios = any(d in user_agent for d in ["iphone", "ipad", "ipod", "macintosh", "mac os x", "darwin", "cfnetwork"])
+        logger.info(f"Direct flow device detection - User-Agent: '{user_agent[:60]}...', is_ios: {is_ios}")
+
         # Determine dynamic FortiGate POST action URL
         auth_action_url = captive_data.get("auth_url")
         if not auth_action_url or "api-gateway" in auth_action_url or not auth_action_url.endswith("/fgtauth"):
@@ -829,37 +838,44 @@ async def auth_callback(request: Request, response: Response):
         console.error('Error in callback script:', err);
       }}
 
-      // 3. ยิงคำขอยืนยันตัวตนไปยัง FortiGate (ใช้ทั้ง fetch no-cors และ form submit เพื่อรองรับทุกเบราว์เซอร์รวมถึง iOS Safari)
-      const magicVal = {json.dumps(magic)};
-      const authUrl = {json.dumps(auth_action_url)};
-      const uVal = {json.dumps(username)};
-      const pVal = {json.dumps(password)};
+      // 3. แยก Flow ระหว่าง iOS (ใช้ Server REST API Auth แล้ว) กับ Android/PC (ใช้ Direct Web Auth)
+      const isIos = {json.dumps(is_ios)};
+      if (isIos) {{
+        // สำหรับ iOS / Apple: อุปกรณ์ได้รับการยืนยันตัวตนบน FortiGate ผ่าน REST API จากฝั่งเซิร์ฟเวอร์เรียบร้อยแล้ว
+        // นำทางเข้าสู่หน้า Keepalive ทันทีอย่างราบรื่น
+        setTimeout(function() {{
+          window.location.href = '/keepalive';
+        }}, 800);
+      }} else {{
+        // สำหรับ Android และอุปกรณ์อื่นๆ: ยิงคำขอยืนยันตัวตนไปยัง FortiGate
+        const magicVal = {json.dumps(magic)};
+        const authUrl = {json.dumps(auth_action_url)};
+        const uVal = {json.dumps(username)};
+        const pVal = {json.dumps(password)};
 
-      if (magicVal && authUrl) {{
-        // ส่งผ่าน fetch API (โหมด no-cors) ซึ่ง iOS Safari อนุญาตให้ส่งคำขอไปยังพอร์ต :1442
-        try {{
-          const postBody = new URLSearchParams();
-          postBody.append('magic', magicVal);
-          postBody.append('username', uVal);
-          postBody.append('password', pVal);
-          fetch(authUrl, {{
-            method: 'POST',
-            body: postBody,
-            mode: 'no-cors'
-          }}).catch(function(e) {{ console.log('fetch handled', e); }});
-        }} catch(err) {{}}
+        if (magicVal && authUrl) {{
+          try {{
+            const postBody = new URLSearchParams();
+            postBody.append('magic', magicVal);
+            postBody.append('username', uVal);
+            postBody.append('password', pVal);
+            fetch(authUrl, {{
+              method: 'POST',
+              body: postBody,
+              mode: 'no-cors'
+            }}).catch(function(e) {{}});
+          }} catch(err) {{}}
 
-        // ยิงผ่าน form submit เสริมอีกทางหนึ่ง
-        try {{
-          const form = document.getElementById('auth_form');
-          if (form) form.submit();
-        }} catch(e) {{}}
+          try {{
+            const form = document.getElementById('auth_form');
+            if (form) form.submit();
+          }} catch(e) {{}}
+        }}
+
+        setTimeout(function() {{
+          window.location.href = '/keepalive';
+        }}, 1800);
       }}
-
-      // 4. นำทางหน้าต่างหลักไปยังหน้า Keepalive อัตโนมัติในอีก 1.5 วินาที
-      setTimeout(function() {{
-        window.location.href = '/keepalive';
-      }}, 1800);
     }};
   </script>
 </head>
