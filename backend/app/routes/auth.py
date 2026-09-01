@@ -435,16 +435,16 @@ async def login(
 
     # Dynamic FortiGate Host resolution
     effective_fw_host = FORTIGATE_IP
-    target_url = URL or auth_url or url
+    target_url = URL or auth_url
     if target_url:
         try:
             from urllib.parse import urlparse
             parsed = urlparse(target_url)
-            if parsed.hostname:
+            if parsed.hostname and "api-gateway" not in parsed.hostname:
                 effective_fw_host = parsed.hostname
         except Exception:
             pass
-    elif fw_ip:
+    elif fw_ip and "api-gateway" not in fw_ip:
         effective_fw_host = fw_ip.split(":")[0]
 
     # Extract client real IP (ignore if it is a hostname like 'auth.dtam.moph.go.th')
@@ -782,8 +782,10 @@ async def auth_callback(request: Request, response: Response):
         
         # Determine dynamic FortiGate POST action URL
         auth_action_url = captive_data.get("auth_url")
-        if not auth_action_url:
+        if not auth_action_url or "api-gateway" in auth_action_url or not auth_action_url.endswith("/fgtauth"):
             clean_fw_host = (captive_data.get("fw_ip") or FORTIGATE_IP).split(":")[0]
+            if "api-gateway" in clean_fw_host:
+                clean_fw_host = FORTIGATE_IP.split(":")[0]
             if FORTIGATE_AUTH_PORT and str(FORTIGATE_AUTH_PORT) not in ["443", "80", "0"]:
                 auth_action_url = f"https://{clean_fw_host}:{FORTIGATE_AUTH_PORT}{FORTIGATE_AUTH_PATH}"
             else:
