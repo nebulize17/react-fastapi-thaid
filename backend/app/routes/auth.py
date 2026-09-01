@@ -336,6 +336,7 @@ async def create_qr_session(
 
     qr_sessions[session_id] = {
         "status": "pending",
+        "flow": "qr",
         "mac": mac or "",
         "ip": client_ip,
         "original_url": url or "",
@@ -413,6 +414,9 @@ async def get_qr_status(session_id: str, request: Request):
 # ENDPOINT: GET /api/auth/login
 # เส้นทางเดิมสำหรับ redirect-based login (ยังใช้ได้อยู่)
 # ============================================================
+# ENDPOINT: GET /api/auth/login
+# เส้นทางสำหรับ redirect-based login (รองรับทั้ง iOS/Android/PC)
+# ============================================================
 @router.get("/login")
 async def login(
     request: Request,
@@ -426,6 +430,9 @@ async def login(
     URL: str = None,
 ):
     """Initiate the ThaID OAuth2 Login Flow. Supports Captive Portal parameters and QR session."""
+    qr_sessions = request.app.state.qr_sessions
+    cleanup_expired_sessions(qr_sessions)
+
     # Dynamic FortiGate Host resolution
     effective_fw_host = FORTIGATE_IP
     target_url = URL or auth_url or url
@@ -452,35 +459,43 @@ async def login(
         else:
             real_ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
 
-    if mac: request.session['guest_mac'] = mac
-    request.session['guest_ip'] = real_ip
-    if url: request.session['original_url'] = url
-    if magic: request.session['fortigate_magic'] = magic
-    request.session['fortigate_ip'] = effective_fw_host
-    if target_url: request.session['auth_url'] = target_url
+    # บันทึก session ลงใน In-Memory qr_sessions store ผูกกับ state UUID
+    # ป้องกัน Session Cookie หายเมื่อ iOS สลับจาก CNA (Captive Network Assistant) -> ThaiD App -> Safari
+    session_id = qr_session or str(uuid.uuid4())
+    qr_sessions[session_id] = {
+        "status": "pending",
+        "flow": "qr" if qr_session else "redirect",
+        "mac": mac or "",
+        "ip": real_ip,
+        "original_url": url or "",
+        "magic": magic or "",
+        "fw_ip": effective_fw_host,
+        "auth_url": target_url or "",
+        "user_info": None,
+        "created_at": time.time(),
+    }
 
-    # เก็บ QR session_id ไว้ใน HTTP session เพื่อดึงใน callback
     if qr_session:
-        request.session['qr_session_id'] = qr_session
         logger.info(f"QR Login initiated for session: {qr_session}")
 
     redirect_uri = THAID_CALLBACK_ENDPOINT if THAID_CALLBACK_ENDPOINT else str(request.url_for('auth_callback'))
-    if THAID_CALLBACK_ENDPOINT and THAID_CALLBACK_ENDPOINT.startswith("https://"):
+    if redirect_uri.startswith("http://") and "dtam.moph.go.th" in redirect_uri:
         redirect_uri = redirect_uri.replace("http://", "https://", 1)
 
-    logger.info(f"Initiating login with redirect_uri: {redirect_uri}")
-    return await oauth.thaid.authorize_redirect(request, redirect_uri)
+    thaid_url = build_thaid_auth_url(session_id, redirect_uri)
+    logger.info(f"Initiating login for session: {session_id}, redirecting to: {thaid_url}")
+    return RedirectResponse(url=thaid_url)
 
 
 # ============================================================
 # ENDPOINT: GET /api/auth/callback
-# ThaiD จะ Redirect กลับมาที่นี่หลัง User สแกน QR
+# ThaiD จะ Redirect กลับมาที่นี่หลัง User สแกน QR / อนุมัติสิทธิ์
 # ============================================================
 @router.get("/callback")
 async def auth_callback(request: Request, response: Response):
     """
     Handle the callback after successful ThaID login.
-    รองรับทั้ง QR Flow (state มี session_id คีย์ตรงกับ qr_sessions) และ redirect flow (ใช้ session cookie)
+    รองรับทั้ง QR Flow และ redirect flow โดยไม่พึ่งพา Cookie บน iOS
     """
     code = request.query_params.get("code")
     state = request.query_params.get("state")
@@ -490,109 +505,74 @@ async def auth_callback(request: Request, response: Response):
         return RedirectResponse(url=f"{FRONTEND_URL}/?error=no_state")
 
     qr_sessions = request.app.state.qr_sessions
-    is_qr_flow = state in qr_sessions
-
-    user_info = None
-    qr_session_id = None
-    captive_data = {}
+    sess = qr_sessions.get(state, {})
+    flow = sess.get("flow", "redirect")
 
     # ดึง redirect_uri ตัวเดียวกันกับตอนส่งขอสิทธิ์
     redirect_uri = THAID_CALLBACK_ENDPOINT if THAID_CALLBACK_ENDPOINT else str(request.url_for('auth_callback'))
     if redirect_uri.startswith("http://") and "dtam.moph.go.th" in redirect_uri:
         redirect_uri = redirect_uri.replace("http://", "https://", 1)
 
-    if is_qr_flow:
-        # --- QR Flow: สแกนข้ามเครื่อง (มือถือ -> คอมพิวเตอร์) ---
-        qr_session_id = state
-        sess = qr_sessions[state]
-        captive_data = {
-            "mac": sess.get("mac", ""),
-            "ip": sess.get("ip", ""),
-            "original_url": sess.get("original_url", ""),
-            "magic": sess.get("magic", ""),
-            "fw_ip": sess.get("fw_ip", FORTIGATE_IP),
-        }
-        logger.info(f"Processing QR Flow callback for session: {qr_session_id}")
+    user_info = None
 
-        try:
-            async with httpx.AsyncClient(verify=False) as client:
-                headers = {}
-                if THAID_API_KEY:
-                    headers['x-api-key'] = THAID_API_KEY
+    # แลก Authorization Code เป็น Access Token และดึง UserInfo โดยตรงผ่าน REST API (ไม่พึ่งพา Session Cookie บน iOS)
+    try:
+        async with httpx.AsyncClient(verify=False) as client:
+            headers = {}
+            if THAID_API_KEY:
+                headers['x-api-key'] = THAID_API_KEY
 
-                # 1. แลก Authorization Code เป็น Access Token
-                token_url = "https://imauth.bora.dopa.go.th/api/v2/oauth2/token/"
-                token_data = {
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "redirect_uri": redirect_uri,
-                    "client_id": THAID_CLIENT_ID,
-                    "client_secret": THAID_CLIENT_SECRET
-                }
-
-                logger.info(f"Manual token exchange at {token_url}")
-                token_res = await client.post(token_url, data=token_data, headers=headers)
-
-                if token_res.status_code != 200:
-                    logger.error(f"Manual token exchange failed: {token_res.text}")
-                    qr_sessions[state]["status"] = "error"
-                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=token_exchange_failed&detail={token_res.text}")
-
-                token_json = token_res.json()
-                access_token = token_json.get("access_token")
-
-                if not access_token:
-                    logger.error("No access_token found in token response.")
-                    qr_sessions[state]["status"] = "error"
-                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=no_access_token")
-
-                # 2. ดึงข้อมูล User Info ด้วย Access Token
-                userinfo_url = "https://imauth.bora.dopa.go.th/api/v2/oauth2/userinfo/"
-                userinfo_headers = {"Authorization": f"Bearer {access_token}"}
-                if THAID_API_KEY:
-                    userinfo_headers['x-api-key'] = THAID_API_KEY
-
-                logger.info(f"Manual userinfo fetch at {userinfo_url}")
-                userinfo_res = await client.get(userinfo_url, headers=userinfo_headers)
-
-                if userinfo_res.status_code != 200:
-                    logger.error(f"Manual userinfo fetch failed: {userinfo_res.text}")
-                    qr_sessions[state]["status"] = "error"
-                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=userinfo_fetch_failed&detail={userinfo_res.text}")
-
-                user_info = userinfo_res.json()
-
-        except Exception as e:
-            logger.error(f"Manual token exchange exception: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            qr_sessions[state]["status"] = "error"
-            return RedirectResponse(url=f"{FRONTEND_URL}/?error=manual_exchange_exception&detail={str(e)}")
-
-    else:
-        # --- Standard Redirect Flow (กรณีสแกน/เข้าสู่ระบบด้วยอุปกรณ์เดียวกัน) ---
-        logger.info("Processing standard Redirect Flow callback")
-        try:
-            token = await oauth.thaid.authorize_access_token(request)
-            user_info = token.get('userinfo')
-
-            if not user_info:
-                logger.error("No userinfo found in token.")
-                return RedirectResponse(url=f"{FRONTEND_URL}/?error=no_userinfo")
-
-            # ดึงข้อมูลจาก session
-            captive_data = {
-                "mac": request.session.get('guest_mac', ""),
-                "ip": request.session.get('guest_ip', ""),
-                "original_url": request.session.get('original_url', ""),
-                "magic": request.session.get('fortigate_magic', ""),
-                "fw_ip": request.session.get('fortigate_ip', FORTIGATE_IP),
+            token_url = "https://imauth.bora.dopa.go.th/api/v2/oauth2/token/"
+            token_data = {
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": THAID_CLIENT_ID,
+                "client_secret": THAID_CLIENT_SECRET
             }
-        except Exception as e:
-            logger.error(f"Authlib Callback Error: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return RedirectResponse(url=f"{FRONTEND_URL}/?error=callback_failed&detail={str(e)}")
+
+            logger.info(f"Manual token exchange at {token_url} for state: {state}")
+            token_res = await client.post(token_url, data=token_data, headers=headers, timeout=15)
+
+            if token_res.status_code != 200:
+                logger.error(f"Manual token exchange failed: {token_res.text}")
+                if state in qr_sessions:
+                    qr_sessions[state]["status"] = "error"
+                return RedirectResponse(url=f"{FRONTEND_URL}/?error=token_exchange_failed&detail={token_res.text}")
+
+            token_json = token_res.json()
+            access_token = token_json.get("access_token")
+
+            if not access_token:
+                logger.error("No access_token found in token response.")
+                if state in qr_sessions:
+                    qr_sessions[state]["status"] = "error"
+                return RedirectResponse(url=f"{FRONTEND_URL}/?error=no_access_token")
+
+            # ดึงข้อมูล User Info ด้วย Access Token
+            userinfo_url = "https://imauth.bora.dopa.go.th/api/v2/oauth2/userinfo/"
+            userinfo_headers = {"Authorization": f"Bearer {access_token}"}
+            if THAID_API_KEY:
+                userinfo_headers['x-api-key'] = THAID_API_KEY
+
+            logger.info(f"Manual userinfo fetch at {userinfo_url}")
+            userinfo_res = await client.get(userinfo_url, headers=userinfo_headers, timeout=15)
+
+            if userinfo_res.status_code != 200:
+                logger.error(f"Manual userinfo fetch failed: {userinfo_res.text}")
+                if state in qr_sessions:
+                    qr_sessions[state]["status"] = "error"
+                return RedirectResponse(url=f"{FRONTEND_URL}/?error=userinfo_fetch_failed&detail={userinfo_res.text}")
+
+            user_info = userinfo_res.json()
+
+    except Exception as e:
+        logger.error(f"Token exchange exception: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        if state in qr_sessions:
+            qr_sessions[state]["status"] = "error"
+        return RedirectResponse(url=f"{FRONTEND_URL}/?error=manual_exchange_exception&detail={str(e)}")
 
     pid = user_info.get('pid') or user_info.get('sub', '')
     logger.info(f"ThaiD Callback success! PID: {pid}")
@@ -708,17 +688,36 @@ async def auth_callback(request: Request, response: Response):
 
     # ============================================================
     # QR Flow: อัปเดต Session Store → Frontend Polling จะเจอ
+    # ดึง Captive Portal Data จาก State Session (ไม่พึ่งพา Cookie บน iOS)
+    captive_data = {
+        "mac": sess.get("mac") or request.session.get("guest_mac", ""),
+        "ip": sess.get("ip") or request.session.get("guest_ip", ""),
+        "original_url": sess.get("original_url") or request.session.get("original_url", ""),
+        "magic": sess.get("magic") or request.session.get("fortigate_magic", ""),
+        "fw_ip": sess.get("fw_ip") or request.session.get("fortigate_ip", FORTIGATE_IP),
+        "auth_url": sess.get("auth_url") or request.session.get("auth_url", ""),
+    }
+
+    # ยิง FortiGate REST API ในเบื้องหลังคู่ขนานเพื่อการันตีการเปิดสิทธิ์ 100%
+    client_ip = captive_data.get("ip")
+    if client_ip and FORTIGATE_API_TOKEN:
+        logger.info(f"Triggering background FortiGate REST API Auth for username '{username}' and IP '{client_ip}'")
+        asyncio.create_task(authenticate_fortigate_api(username, client_ip))
+
     # ============================================================
-    if qr_session_id:
-        qr_sessions = request.app.state.qr_sessions
+    # QR Flow vs Direct Flow Branching
+    # ============================================================
+    if flow == "qr":
+        qr_session_id = state
         if qr_session_id in qr_sessions:
             qr_sessions[qr_session_id].update({
                 "status": "success",
                 "user_info": user_info,
                 "username": username,
                 "password": password,
-                "magic": captive_data.get("magic", qr_sessions[qr_session_id].get("magic", "")),
-                "fw_ip": captive_data.get("fw_ip", qr_sessions[qr_session_id].get("fw_ip", FORTIGATE_IP)),
+                "magic": captive_data.get("magic", ""),
+                "fw_ip": captive_data.get("fw_ip", FORTIGATE_IP),
+                "auth_url": captive_data.get("auth_url", ""),
             })
             logger.info(f"QR Session {qr_session_id} updated to success for username '{username}'")
 
@@ -780,8 +779,8 @@ async def auth_callback(request: Request, response: Response):
         return HTMLResponse(content=html_content)
 
     else:
-        # --- Standard Redirect Flow (กรณีสแกน/เข้าสู่ระบบด้วยอุปกรณ์เดียวกัน) ---
-        logger.info("Processing standard Redirect Flow callback HTML generator")
+        # --- Standard Direct Flow (กรณี iOS / iPhone / Android บนเครื่องเดียวกัน) ---
+        logger.info("Processing standard Direct Flow callback HTML generator")
         
         user_info_json = json.dumps(user_info, ensure_ascii=False)
         magic = captive_data.get("magic", "")
@@ -790,6 +789,15 @@ async def auth_callback(request: Request, response: Response):
         fw_ip = captive_data.get("fw_ip", FORTIGATE_IP)
         original_url = captive_data.get("original_url", "")
         
+        # Determine dynamic FortiGate POST action URL
+        auth_action_url = captive_data.get("auth_url")
+        if not auth_action_url:
+            clean_fw_host = (captive_data.get("fw_ip") or FORTIGATE_IP).split(":")[0]
+            if FORTIGATE_AUTH_PORT and str(FORTIGATE_AUTH_PORT) not in ["443", "80", "0"]:
+                auth_action_url = f"https://{clean_fw_host}:{FORTIGATE_AUTH_PORT}{FORTIGATE_AUTH_PATH}"
+            else:
+                auth_action_url = f"https://{clean_fw_host}{FORTIGATE_AUTH_PATH}"
+
         standard_html_content = f"""<!DOCTYPE html>
 <html lang="th">
 <head>
@@ -827,7 +835,8 @@ async def auth_callback(request: Request, response: Response):
           ip: {json.dumps(ip)},
           url: {json.dumps(original_url)},
           magic: {json.dumps(magic)},
-          fw_ip: {json.dumps(fw_ip)}
+          fw_ip: {json.dumps(fw_ip)},
+          auth_url: {json.dumps(auth_action_url)}
         }};
         localStorage.setItem('captive_params', JSON.stringify(captiveData));
 
@@ -837,43 +846,57 @@ async def auth_callback(request: Request, response: Response):
           username: {json.dumps(username)},
           password: {json.dumps(password)},
           fw_ip: {json.dumps(fw_ip)},
+          auth_url: {json.dumps(auth_action_url)},
           fw_port: "{FORTIGATE_AUTH_PORT}",
           fw_path: "{FORTIGATE_AUTH_PATH}"
         }};
         localStorage.setItem('thaid_success_data', JSON.stringify(successData));
-        
-        // 3. ยิง Submit ไปยัง FortiGate ผ่าน iframe
-        const form = document.getElementById('auth_form');
-        form.submit();
-        
-        // 4. นำทางหน้าต่างหลักไปยัง /keepalive ในอีก 3 วินาทีถัดไป เพื่อให้แน่ใจว่าเบราว์เซอร์ส่ง POST ไป FortiGate สำเร็จก่อนเปลี่ยนหน้า
-        setTimeout(function() {{
-          window.location.href = '/keepalive';
-        }}, 3000);
       }} catch (err) {{
         console.error('Error in callback script:', err);
-        window.location.href = '/keepalive';
+      }}
+
+      // 3. ทำ Direct Form Submit ไปยัง FortiGate โดยตรง (ไม่ใช้ hidden iframe เพื่อไม่ให้ iOS Safari บล็อก)
+      const magicVal = {json.dumps(magic)};
+      if (magicVal) {{
+        setTimeout(function() {{
+          const form = document.getElementById('auth_form');
+          if (form) form.submit();
+        }}, 500);
+      }} else {{
+        // ถ้าไม่มี magic token (เข้าเว็บตรงๆ) ให้นำทางไป /keepalive
+        setTimeout(function() {{
+          window.location.href = '/keepalive';
+        }}, 800);
       }}
     }};
   </script>
 </head>
 <body>
-  <iframe id="auth_iframe" name="auth_iframe" style="display: none;"></iframe>
-  
-  <form id="auth_form" method="POST" action="https://{fw_ip}:1442/fgtauth" target="auth_iframe" style="display: none;">
+  <!-- ทำ Form Submit ตรงไปยัง FortiGate พร้อมกำหนด 4Tredir ไปยัง /keepalive -->
+  <form id="auth_form" method="POST" action="{auth_action_url}">
     <input type="hidden" name="magic" value="{magic}" />
     <input type="hidden" name="username" value="{username}" />
     <input type="hidden" name="password" value="{password}" />
+    <input type="hidden" name="4Tredir" value="https://api-gateway.dtam.moph.go.th/keepalive" />
   </form>
 
   <div class="card">
     <div class="spinner"></div>
     <h1>กำลังเชื่อมต่ออินเทอร์เน็ต</h1>
-    <p>ระบบตรวจสอบสิทธิ์สำเร็จแล้ว กำลังเชื่อมต่ออินเทอร์เน็ตและนำท่านไปยังหน้าระบบควบคุมการใช้งาน...</p>
+    <p>ระบบตรวจสอบสิทธิ์สำเร็จแล้ว กำลังยืนยันตัวตนกับเครือข่าย...</p>
   </div>
 </body>
 </html>"""
-        return HTMLResponse(content=standard_html_content)
+        resp = HTMLResponse(content=standard_html_content)
+        resp.set_cookie(
+            key="auth_token",
+            value=jwt_token,
+            httponly=True,
+            max_age=7200,
+            samesite="lax",
+            secure=False
+        )
+        return resp
 
 # ENDPOINT: POST /api/auth/logout
 # ============================================================
