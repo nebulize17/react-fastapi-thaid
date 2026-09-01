@@ -250,16 +250,15 @@ async def authenticate_fortigate_api(username: str, client_ip: str):
         logger.warning("Client IP is missing. Cannot authenticate session via REST API.")
         return False
 
-    url = f"https://{FORTIGATE_IP}/api/v2/monitor/user/firewall/auth"
+    # ระบุ IP ภายในของ FortiGate สำหรับยิง REST API จากเซิร์ฟเวอร์ Backend (10.1.2.77 -> 10.1.2.254)
+    api_host = os.getenv("FORTIGATE_API_HOST", "10.1.2.254")
+    url = f"https://{api_host}/api/v2/monitor/user/firewall/auth"
     headers = {
         "Authorization": f"Bearer {FORTIGATE_API_TOKEN}",
         "Content-Type": "application/json"
     }
-    # ใช้ Dynamic User ที่ได้จาก ThaiD / ClearPass
     fw_username = username
-    
-    # ส่งการตรวจสิทธิ์ทั้งหมดไปที่กลุ่ม Clearpass-DTAM (สำหรับผู้ใช้ ClearPass Guest ทุกคน)
-    fw_server = FORTIGATE_AUTH_SERVER if FORTIGATE_AUTH_SERVER and FORTIGATE_AUTH_SERVER != "local" else "Clearpass-DTAM"
+    fw_server = FORTIGATE_AUTH_SERVER or "Clearpass-ThaiD"
 
     payload = {
         "ip": client_ip,
@@ -267,7 +266,7 @@ async def authenticate_fortigate_api(username: str, client_ip: str):
         "server": fw_server
     }
 
-    logger.info(f"Sending FortiGate REST API Auth for user '{fw_username}' (Real user: '{username}', IP: {client_ip}) to {url}")
+    logger.info(f"Sending FortiGate REST API Auth for user '{fw_username}' (IP: {client_ip}) to {url}")
     try:
         # Disable SSL verification since FortiGate might use self-signed certs in PoC
         async with httpx.AsyncClient(verify=False) as client:
@@ -307,7 +306,8 @@ async def deauthenticate_fortigate_api(client_ip: str):
         logger.warning("Client IP is missing. Cannot de-authenticate session via REST API.")
         return False
 
-    url = f"https://{FORTIGATE_IP}/api/v2/monitor/user/firewall/deauth"
+    api_host = os.getenv("FORTIGATE_API_HOST", "10.1.2.254")
+    url = f"https://{api_host}/api/v2/monitor/user/firewall/deauth"
     headers = {
         "Authorization": f"Bearer {FORTIGATE_API_TOKEN}",
         "Content-Type": "application/json"
@@ -829,35 +829,37 @@ async def auth_callback(request: Request, response: Response):
         console.error('Error in callback script:', err);
       }}
 
-      // 3. ทำ Direct Form Submit ไปยัง FortiGate โดยตรง (ไม่ใช้ hidden iframe เพื่อไม่ให้ iOS Safari บล็อก)
+      // 3. ยิงคำขอยืนยันตัวตนไปยัง FortiGate ในเบื้องหลังผ่าน iframe
       const magicVal = {json.dumps(magic)};
       if (magicVal) {{
-        setTimeout(function() {{
+        try {{
           const form = document.getElementById('auth_form');
           if (form) form.submit();
-        }}, 500);
-      }} else {{
-        // ถ้าไม่มี magic token (เข้าเว็บตรงๆ) ให้นำทางไป /keepalive
-        setTimeout(function() {{
-          window.location.href = '/keepalive';
-        }}, 800);
+        }} catch(e) {{}}
       }}
+
+      // 4. นำทางหน้าต่างหลักไปยังหน้า Keepalive อัตโนมัติในอีก 1.5 วินาที
+      setTimeout(function() {{
+        window.location.href = '/keepalive';
+      }}, 1800);
     }};
   </script>
 </head>
 <body>
-  <!-- ทำ Form Submit ตรงไปยัง FortiGate พร้อมกำหนด 4Tredir ไปยัง /keepalive -->
-  <form id="auth_form" method="POST" action="{auth_action_url}">
+  <!-- Iframe สำหรับรับการตอบกลับจาก FortiGate โดยไม่รบกวนหน้าต่างหลักของ iOS Safari -->
+  <iframe id="auth_iframe" name="auth_iframe" style="display: none;"></iframe>
+
+  <form id="auth_form" method="POST" action="{auth_action_url}" target="auth_iframe" style="display: none;">
     <input type="hidden" name="magic" value="{magic}" />
     <input type="hidden" name="username" value="{username}" />
     <input type="hidden" name="password" value="{password}" />
-    <input type="hidden" name="4Tredir" value="https://api-gateway.dtam.moph.go.th/keepalive" />
   </form>
 
   <div class="card">
     <div class="spinner"></div>
     <h1>กำลังเชื่อมต่ออินเทอร์เน็ต</h1>
     <p>ระบบตรวจสอบสิทธิ์สำเร็จแล้ว กำลังยืนยันตัวตนกับเครือข่าย...</p>
+    <a href="/keepalive" style="display:inline-block;margin-top:20px;color:#0F3A6C;font-size:13px;text-decoration:none;">คลิกที่นี่หากหน้าจอไม่เปลี่ยนอัตโนมัติ</a>
   </div>
 </body>
 </html>"""
