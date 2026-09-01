@@ -816,11 +816,19 @@ async def auth_callback(request: Request, response: Response):
         console.error('Error in callback script:', err);
       }}
 
-      // 3. ยิง Submit ไปยัง FortiGate fgtauth โดยตรง (Direct Submit สำหรับ iPhone CNA และ Android)
-      setTimeout(function() {{
-        const form = document.getElementById('auth_form');
-        if (form) form.submit();
-      }}, 500);
+      // 3. ยิง Submit ไปยัง FortiGate fgtauth เฉพาะกรณีที่มี magic token จาก Captive Portal
+      const magicVal = {json.dumps(magic)};
+      if (magicVal) {{
+        setTimeout(function() {{
+          const form = document.getElementById('auth_form');
+          if (form) form.submit();
+        }}, 500);
+      }} else {{
+        // ถ้าไม่มี magic token (เข้าเว็บตรงๆ) ให้นำทางไป Dashboard โดยไม่ต้อง POST
+        setTimeout(function() {{
+          window.location.href = '/dashboard';
+        }}, 800);
+      }}
     }};
   </script>
 </head>
