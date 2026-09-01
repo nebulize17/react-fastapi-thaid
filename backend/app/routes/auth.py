@@ -620,48 +620,27 @@ async def auth_callback(request: Request, response: Response):
                 
                 if user_res.status_code == 200:
                     user_data = user_res.json()
+                    user_id = user_data.get("id")
                     
-                    notes = user_data.get("notes", "")
-                    db_password = None
+                    # รีเฟรชรหัสผ่านและเปิดสถานะบัญชีใน ClearPass ให้พร้อมใช้งานเสมอ (ป้องกันกรณีบัญชีเดิมหมดอายุหรือรหัสไม่ตรง)
+                    password = generate_pattern_password(pid)
+                    update_url = f"https://{CPPM_HOST}/api/guest/{user_id}" if user_id else f"https://{CPPM_HOST}/api/guest/username/{username}"
+                    patch_payload = {
+                        "enabled": True,
+                        "password": password,
+                        "expire_after": 480
+                    }
+                    patch_headers = {
+                        "Authorization": f"Bearer {access_token}",
+                        "Content-Type": "application/json"
+                    }
+                    try:
+                        patch_res = await client.patch(update_url, json=patch_payload, headers=patch_headers, timeout=10)
+                        logger.info(f"Synchronized ClearPass user '{username}' password and re-enabled account (status: {patch_res.status_code})")
+                    except Exception as patch_err:
+                        logger.error(f"Exception during ClearPass password sync for '{username}': {str(patch_err)}")
                     
-                    # 1. เช็คว่าเป็นบัญชีที่สร้างจากระบบ ThaiD หรือไม่ (ดูว่ามี "ThaiD" ใน notes)
-                    is_thaid_user = "ThaiD" in notes
-                    
-                    if is_thaid_user:
-                        # คำนวณรหัสผ่านจาก PID ที่ได้มาจาก callback ทันที
-                        db_password = generate_pattern_password(pid)
-                        logger.info(f"Recognized ThaiD user '{username}'. Dynamic password regenerated from PID.")
-                    elif "PWD:" in notes:
-                        # 2. บัญชีประเภทคูปองเกสท์ดึงรหัสผ่านธรรมดาจาก Notes
-                        db_password = notes.split("PWD:")[-1].strip()
-                        logger.info(f"Successfully extracted stored password from ClearPass notes for user '{username}'")
-                    
-                    # 3. กรณีไม่มีลายเซ็น ThaiD และไม่มีฟิลด์ PWD: ใน notes (กรณีบัญชีเดิมตกค้าง)
-                    if not db_password:
-                        logger.info(f"No password signature in notes for '{username}'. Dynamically updating ClearPass password to match username.")
-                        user_id = user_data.get("id")
-                        update_url = f"https://{CPPM_HOST}/api/guest/username/{username}"
-                        if user_id:
-                            update_url = f"https://{CPPM_HOST}/api/guest/{user_id}"
-                        
-                        patch_payload = {"password": username}
-                        patch_headers = {
-                            "Authorization": f"Bearer {access_token}",
-                            "Content-Type": "application/json"
-                        }
-                        try:
-                            patch_res = await client.patch(update_url, json=patch_payload, headers=patch_headers, timeout=10)
-                            if patch_res.status_code in [200, 204]:
-                                db_password = username
-                                logger.info(f"Successfully updated ClearPass user '{username}' password to match username.")
-                            else:
-                                logger.error(f"Failed to patch ClearPass password: {patch_res.text}")
-                        except Exception as patch_err:
-                            logger.error(f"Exception during ClearPass password patch: {str(patch_err)}")
-                    
-                    # 4. นำรหัสผ่านที่ได้ไปใช้เข้า Captive Portal
-                    password = db_password or username
-                    logger.info(f"Using password for FortiGate captive portal: {password}")
+                    logger.info(f"Using synchronized password for FortiGate captive portal: {password}")
                 else:
                     # กรณีไม่มี user บน clearpass ให้ทำการสร้างบัญชีเกสท์ใหม่ในระบบ ClearPass อัตโนมัติ
                     logger.info(f"User '{username}' not found in ClearPass. Creating new user dynamically.")
