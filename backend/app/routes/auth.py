@@ -68,15 +68,15 @@ def create_jwt_token(data: dict):
 # ============================================================
 def build_thaid_auth_url(session_id: str, redirect_uri: str) -> str:
     """
-    สร้าง ThaiD OAuth2 Authorization URL สำหรับ QR Code โดยตรง
+    สร้าง ThaiD OAuth2 Authorization URL สำหรับ QR Code และ Direct Login
     - state = session_id (เพื่อให้ ThaiD callback กลับมาพร้อม session_id นี้)
-    - scope = openid pid (เสถียรและพอดีกับการใช้ตรวจสิทธิ์)
+    - scope = openid pid title title_en given_name_en family_name_en name name_en
     """
     params = {
         "response_type": "code",
         "client_id": THAID_CLIENT_ID,
         "redirect_uri": redirect_uri,
-        "scope": "openid pid",
+        "scope": "openid pid title title_en given_name_en family_name_en name name_en",
         "state": session_id
     }
     auth_endpoint = "https://imauth.bora.dopa.go.th/api/v2/oauth2/auth/"
@@ -124,18 +124,17 @@ async def create_cppm_user(username: str, password: str, user_info: dict = None)
         return False
 
     user_info = user_info or {}
-    pid = user_info.get("pid") or user_info.get("sub", "")
     thai_name = user_info.get("name", "")
     english_name = user_info.get("name_en", "")
-    
-    # Map to ClearPass Guest fields
-    visitor_name = thai_name if thai_name else (english_name if english_name else f"ThaiD User {username}")
+    title_th = user_info.get("title", "")
+    full_thai_name = f"{title_th} {thai_name}".strip() if title_th else thai_name
+    visitor_name = full_thai_name or english_name or f"ThaiD User {username}"
     
     # Mask PID for security (e.g. 1101500387514 -> 110XXXXXX7514)
     masked_pid = pid[:3] + "X" * (len(pid) - 6) + pid[-3:] if len(pid) >= 8 else "X" * len(pid)
     
-    # Store masked PID and metadata in the ClearPass notes field for tracking (No plain password stored)
-    notes = f"ThaiD QR Authentication. PID: {masked_pid}. Name (TH): {thai_name}. Name (EN): {english_name}. Authenticated at: {datetime.now(timezone.utc).isoformat()}"
+    # Store full names and metadata in the ClearPass notes and visitor_name fields
+    notes = f"ThaiD Authentication | PID: {masked_pid} | Name (TH): {full_thai_name} | Name (EN): {english_name} | Created: {datetime.now(timezone.utc).isoformat()}"
 
     try:
         async with httpx.AsyncClient(verify=False) as client:
@@ -577,15 +576,9 @@ async def auth_callback(request: Request, response: Response):
     pid = user_info.get('pid') or user_info.get('sub', '')
     logger.info(f"ThaiD Callback success! PID: {pid}")
 
-    # Calculate custom username based on: English First Name + First 2 chars of English Last Name (lowercase)
-    given = user_info.get("given_name_en", "")
-    family = user_info.get("family_name_en", "")
-    if given and family:
-        username = (given.strip() + family.strip()[:2]).lower()
-        logger.info(f"Calculated username '{username}' from English name: '{given} {family}'")
-    else:
-        username = pid
-        logger.info(f"Missing given_name_en or family_name_en. Falling back to PID/sub as username: '{username}'")
+    # กำหนด Username ให้เป็นเลขบัตรประชาชน (PID) สำหรับบันทึกในระบบ Firewall & ClearPass
+    username = pid
+    logger.info(f"Using PID as username for Firewall & ClearPass: '{username}'")
 
 
 
@@ -622,12 +615,23 @@ async def auth_callback(request: Request, response: Response):
                     user_data = user_res.json()
                     user_id = user_data.get("id")
                     
-                    # รีเฟรชรหัสผ่านและเปิดสถานะบัญชีใน ClearPass ให้พร้อมใช้งานเสมอ (ป้องกันกรณีบัญชีเดิมหมดอายุหรือรหัสไม่ตรง)
+                    # รีเฟรชรหัสผ่าน ชื่อ-นามสกุล และเปิดสถานะบัญชีใน ClearPass ให้พร้อมใช้งานเสมอ
                     password = generate_pattern_password(pid)
+                    thai_name = user_info.get("name", "")
+                    english_name = user_info.get("name_en", "")
+                    title_th = user_info.get("title", "")
+                    full_thai_name = f"{title_th} {thai_name}".strip() if title_th else thai_name
+                    visitor_name = full_thai_name or english_name or f"ThaiD User {username}"
+                    
+                    masked_pid = pid[:3] + "X" * (len(pid) - 6) + pid[-3:] if len(pid) >= 8 else "X" * len(pid)
+                    notes = f"ThaiD Authentication | PID: {masked_pid} | Name (TH): {full_thai_name} | Name (EN): {english_name} | Updated: {datetime.now(timezone.utc).isoformat()}"
+
                     update_url = f"https://{CPPM_HOST}/api/guest/{user_id}" if user_id else f"https://{CPPM_HOST}/api/guest/username/{username}"
                     patch_payload = {
                         "enabled": True,
                         "password": password,
+                        "visitor_name": visitor_name,
+                        "notes": notes,
                         "expire_after": 480
                     }
                     patch_headers = {
@@ -636,9 +640,9 @@ async def auth_callback(request: Request, response: Response):
                     }
                     try:
                         patch_res = await client.patch(update_url, json=patch_payload, headers=patch_headers, timeout=10)
-                        logger.info(f"Synchronized ClearPass user '{username}' password and re-enabled account (status: {patch_res.status_code})")
+                        logger.info(f"Synchronized ClearPass user '{username}' (Name: {visitor_name}) password and account status: {patch_res.status_code}")
                     except Exception as patch_err:
-                        logger.error(f"Exception during ClearPass password sync for '{username}': {str(patch_err)}")
+                        logger.error(f"Exception during ClearPass sync for '{username}': {str(patch_err)}")
                     
                     logger.info(f"Using synchronized password for FortiGate captive portal: {password}")
                 else:
