@@ -64,19 +64,19 @@ def create_jwt_token(data: dict):
 
 
 # ============================================================
-# Helper: Build ThaiD Authorization URL (for QR Code & Direct Login)
+# Helper: Build ThaiD Authorization URL (for QR Code)
 # ============================================================
 def build_thaid_auth_url(session_id: str, redirect_uri: str) -> str:
     """
-    สร้าง ThaiD OAuth2 Authorization URL
+    สร้าง ThaiD OAuth2 Authorization URL สำหรับ QR Code โดยตรง
     - state = session_id (เพื่อให้ ThaiD callback กลับมาพร้อม session_id นี้)
-    - scope = ขอข้อมูลชื่อ-นามสกุลภาษาอังกฤษ เพื่อนำมาสร้าง username (ชื่อ + นามสกุล 2 ตัวแรก)
+    - scope = openid pid (เสถียรและพอดีกับการใช้ตรวจสิทธิ์)
     """
     params = {
         "response_type": "code",
         "client_id": THAID_CLIENT_ID,
         "redirect_uri": redirect_uri,
-        "scope": "openid pid title title_en given_name_en family_name_en name name_en",
+        "scope": "openid pid",
         "state": session_id
     }
     auth_endpoint = "https://imauth.bora.dopa.go.th/api/v2/oauth2/auth/"
@@ -131,7 +131,7 @@ async def create_cppm_user(username: str, password: str, user_info: dict = None)
     # Map to ClearPass Guest fields
     visitor_name = thai_name if thai_name else (english_name if english_name else f"ThaiD User {username}")
     
-    # Mask PID for security (e.g. 1111700387514 -> 110XXXXXX7514)
+    # Mask PID for security (e.g. 1101500387514 -> 110XXXXXX7514)
     masked_pid = pid[:3] + "X" * (len(pid) - 6) + pid[-3:] if len(pid) >= 8 else "X" * len(pid)
     
     # Store masked PID and metadata in the ClearPass notes field for tracking (No plain password stored)
@@ -542,15 +542,6 @@ async def auth_callback(request: Request, response: Response):
     # Calculate custom username based on: English First Name + First 2 chars of English Last Name (lowercase)
     given = user_info.get("given_name_en", "")
     family = user_info.get("family_name_en", "")
-    if not given or not family:
-        # เผื่อกรณี ThaiD ส่งมาใน field name_en (เช่น "Supajit Pansawat")
-        name_en = user_info.get("name_en", "")
-        if name_en and " " in name_en.strip():
-            parts = name_en.strip().split()
-            if len(parts) >= 2:
-                given = parts[0]
-                family = parts[-1]
-
     if given and family:
         username = (given.strip() + family.strip()[:2]).lower()
         logger.info(f"Calculated username '{username}' from English name: '{given} {family}'")
