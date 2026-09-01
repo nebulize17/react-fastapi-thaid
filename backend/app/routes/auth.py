@@ -228,6 +228,48 @@ async def authenticate_fortigate_api(username: str, client_ip: str):
     except Exception as e:
         logger.error(f"Error calling FortiGate REST API: {str(e)}")
         return False
+
+
+# ============================================================
+# Helper: FortiGate REST API De-authentication (Logout)
+# ============================================================
+async def deauthenticate_fortigate_api(client_ip: str):
+    """
+    De-authenticate user session on FortiGate via REST API.
+    Endpoint: POST /api/v2/monitor/user/firewall/deauth
+    """
+    if not FORTIGATE_API_TOKEN or FORTIGATE_API_TOKEN == "your_fortigate_api_token_here" or not FORTIGATE_API_TOKEN.strip():
+        logger.warning("FortiGate API Token missing or placeholder. Skipping REST API de-auth.")
+        return False
+
+    if not client_ip:
+        logger.warning("Client IP is missing. Cannot de-authenticate session via REST API.")
+        return False
+
+    url = f"https://{FORTIGATE_IP}/api/v2/monitor/user/firewall/deauth"
+    headers = {
+        "Authorization": f"Bearer {FORTIGATE_API_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "ip": client_ip
+    }
+
+    logger.info(f"Sending FortiGate REST API Deauth for IP '{client_ip}' to {url}")
+    try:
+        async with httpx.AsyncClient(verify=False) as client:
+            res = await client.post(url, json=payload, headers=headers, timeout=8)
+            logger.info(f"FortiGate REST API Deauth response status: {res.status_code}")
+            try:
+                res_data = res.json()
+                logger.info(f"FortiGate REST API Deauth response: {json.dumps(res_data)}")
+            except Exception:
+                logger.info(f"FortiGate REST API Deauth raw response: {res.text}")
+
+            return res.status_code in [200, 201]
+    except Exception as e:
+        logger.error(f"Error calling FortiGate Deauth REST API: {str(e)}")
+        return False
 # ============================================================
 def cleanup_expired_sessions(qr_sessions: dict):
     """ลบ session ที่หมดอายุแล้ว"""
@@ -836,8 +878,19 @@ async def auth_callback(request: Request, response: Response):
 # ENDPOINT: POST /api/auth/logout
 # ============================================================
 @router.post("/logout")
-async def logout(response: Response):
-    """Clear the auth cookie and logout the user."""
-    res = RedirectResponse(url=f"{FRONTEND_URL}/")
+async def logout(request: Request, response: Response):
+    """Clear the auth cookie and de-authenticate the session from FortiGate."""
+    client_ip = ""
+    x_forwarded_for = request.headers.get("x-forwarded-for")
+    if x_forwarded_for:
+        client_ip = x_forwarded_for.split(",")[0].strip()
+    else:
+        client_ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
+
+    if client_ip and FORTIGATE_API_TOKEN:
+        logger.info(f"Triggering FortiGate background deauth for IP: {client_ip}")
+        asyncio.create_task(deauthenticate_fortigate_api(client_ip))
+
+    res = JSONResponse({"status": "success", "message": "Logged out successfully"})
     res.delete_cookie("auth_token")
     return res

@@ -14,39 +14,53 @@ export default function Logout() {
   const [logoutUrl, setLogoutUrl] = useState('')
 
   useEffect(() => {
-    // 1. ดึงค่า magic และ fw_ip จาก URL query parameters หรือ localStorage
+    // 1. ยิงคำสั่ง Logout ไปที่ Backend เพื่อสั่ง FortiGate REST API Deauth ทันที
+    fetch('/api/auth/logout', { method: 'POST' })
+      .then(res => res.json())
+      .catch(err => console.error('Backend logout error:', err))
+
+    // 2. ดึงค่า magic และ fw_ip จาก URL query parameters หรือ localStorage
     const params = new URLSearchParams(window.location.search)
     let magic = params.get('magic')
-    let fwIp = params.get('fw_ip') || '192.168.64.253'
+    let fwIp = params.get('fw_ip')
 
-    if (!magic) {
+    if (!magic || !fwIp) {
       const storedParams = localStorage.getItem('captive_params')
       if (storedParams) {
         try {
           const parsed = JSON.parse(storedParams)
-          magic = parsed.magic
-          if (parsed.fw_ip) {
-            fwIp = parsed.fw_ip
-          }
+          magic = magic || parsed.magic
+          fwIp = fwIp || parsed.fw_ip
         } catch (e) {
           console.error('Error parsing captive_params from localStorage', e)
         }
       }
     }
 
+    // Default fallback หากไม่พบ IP
+    fwIp = (fwIp || 'auth.dtam.moph.go.th').split(':')[0]
+
     if (magic) {
-      // ตั้งค่า URL สำหรับการยิง Logout ไปยัง FortiGate
-      const targetUrl = `https://${fwIp}:1442/logout?magic=${magic}`
+      // ตั้งค่า URL สำหรับการยิง Logout ไปยัง FortiGate Captive Portal
+      const targetUrl = `https://${fwIp}:1442/logout?${magic}`
       setLogoutUrl(targetUrl)
+
+      // ส่ง Image ping / Beacon ไปยัง FortiGate logout endpoint อีกชั้นเพื่อความชัวร์
+      try {
+        const pingImg = new Image()
+        pingImg.src = `https://${fwIp}:1442/logout?magic=${magic}&_t=${Date.now()}`
+      } catch (e) {
+        console.error('Image ping error:', e)
+      }
 
       // ล้างข้อมูลความสำเร็จเดิมใน localStorage เพื่อความปลอดภัย
       localStorage.removeItem('thaid_success_data')
       localStorage.removeItem('captive_params')
 
-      // หน่วงเวลา 2.5 วินาทีเพื่อให้เบราว์เซอร์ส่ง GET request ไปยัง FortiGate จนเสร็จสิ้น
+      // หน่วงเวลา 2 วินาทีเพื่อให้คำสั่ง Logout ทำงานเสร็จสิ้น
       const timer = setTimeout(() => {
         setPhase('success')
-      }, 2500)
+      }, 2000)
 
       return () => clearTimeout(timer)
     } else {
