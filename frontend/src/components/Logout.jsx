@@ -17,7 +17,7 @@ export default function Logout() {
     // 1. ดึงค่า magic และ fw_ip จาก URL query parameters หรือ localStorage
     const params = new URLSearchParams(window.location.search)
     let magic = params.get('magic')
-    let fwIp = params.get('fw_ip') || '10.1.1.77'
+    let fwIp = params.get('fw_ip') || '192.168.64.253'
 
     if (!magic) {
       const storedParams = localStorage.getItem('captive_params')
@@ -36,9 +36,7 @@ export default function Logout() {
 
     if (magic) {
       // ตั้งค่า URL สำหรับการยิง Logout ไปยัง FortiGate
-      const cleanIp = fwIp.split(':')[0]
-      const port = fwIp.includes(':') ? `:${fwIp.split(':')[1]}` : ''
-      const targetUrl = `https://${cleanIp}${port}/logout?magic=${magic}`
+      const targetUrl = `https://${fwIp}:1442/logout?magic=${magic}`
       setLogoutUrl(targetUrl)
 
       // ล้างข้อมูลความสำเร็จเดิมใน localStorage เพื่อความปลอดภัย

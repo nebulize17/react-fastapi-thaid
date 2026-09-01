@@ -23,8 +23,8 @@ CPPM_CLIENT_SECRET = os.getenv("CLEARPASS_CLIENT_SECRET", "")
 CPPM_LOGIN_URL = os.getenv("CLEARPASS_LOGIN_URL", "")
 
 # FortiGate Captive Portal Settings
-FORTIGATE_IP = os.getenv("FORTIGATE_IP", "10.1.1.77")
-FORTIGATE_AUTH_PORT = int(os.getenv("FORTIGATE_AUTH_PORT", "443"))
+FORTIGATE_IP = os.getenv("FORTIGATE_IP", "192.168.254.253")
+FORTIGATE_AUTH_PORT = int(os.getenv("FORTIGATE_AUTH_PORT", "1000"))
 FORTIGATE_AUTH_PATH = os.getenv("FORTIGATE_AUTH_PATH", "/fgtauth")
 
 # FortiGate REST API Settings

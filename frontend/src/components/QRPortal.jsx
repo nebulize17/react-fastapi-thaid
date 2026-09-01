@@ -148,7 +148,7 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
         formRef.current.submit();
         if (onSubmitted) {
           // หน่วงเวลาเล็กน้อยเพื่อให้ฟอร์ม submit สำเร็จก่อนเปลี่ยนหน้า
-          setTimeout(onSubmitted, 1200);
+          setTimeout(onSubmitted, 1000);
         }
       } else {
         // ถ้าไม่มีค่า magic (เปิดเว็บมาทดสอบตรงๆ) ให้เด้งไป Google เลย
@@ -160,14 +160,10 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
 
   if (!magic) return null
 
-  // ดึง URL ปลายทางของ FortiGate โดยอัตโนมัติ (เช่น https://10.1.1.77/fgtauth)
-  let postTarget = authUrl || '';
-  if (!postTarget) {
-    const targetIp = fwIp || '10.1.1.77';
-    const cleanIp = targetIp.split(':')[0];
-    const port = fwPort && !['443', '80', '1442'].includes(String(fwPort)) ? `:${fwPort}` : (targetIp.includes(':') ? `:${targetIp.split(':')[1]}` : '');
-    postTarget = `https://${cleanIp}${port}${fwPath || '/fgtauth'}`;
-  }
+  // บังคับยิงไปที่ IP และพอร์ตของวงนี้โดยตรง เพื่อป้องกันค่าเก่าที่ค้างมาจาก FortiGate
+  const targetIp = fwIp || 'auth-thaid.dtam.moph.go.th';
+  const cleanIp = targetIp.split(':')[0];
+  const postTarget = `https://${cleanIp}:1442/fgtauth`;
 
   return (
     <>
@@ -180,8 +176,8 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
         style={{ display: 'none' }}
       >
         <input type="hidden" name="magic" value={magic} />
-        <input type="hidden" name="username" value={username || ""} />
-        <input type="hidden" name="password" value={password || ""} />
+        <input type="hidden" name="username" value={username || "thanphichetwi"} />
+        <input type="hidden" name="password" value={password || "Benz1711"} />
       </form>
     </>
   )
@@ -193,9 +189,6 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
 export default function QRPortal({ keepaliveOnly }) {
   const [phase, setPhase] = useState(keepaliveOnly ? 'keepalive' : 'init')
   // phases: init | loading | ready | scanning | success | keepalive | expired | error
-
-  const isMobileDevice = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  const [viewMode, setViewMode] = useState(isMobileDevice ? 'direct' : 'qr'); // 'direct' for mobile (iPhone/Android), 'qr' for desktop (PC)
 
   const [sessionId, setSessionId] = useState(null)
   const [thaidUrl, setThaidUrl] = useState('')
@@ -233,14 +226,9 @@ export default function QRPortal({ keepaliveOnly }) {
     const magic = captiveParams.magic || ''
     const username = successData?.username || ''
     const password = successData?.password || ''
-    
-    let postTarget = captiveParams.auth_url || successData?.auth_url || ''
-    if (!postTarget) {
-      const targetIp = captiveParams.fw_ip || successData?.fw_ip || '10.1.1.77'
-      const cleanIp = targetIp.split(':')[0]
-      const port = targetIp.includes(':') ? `:${targetIp.split(':')[1]}` : ''
-      postTarget = `https://${cleanIp}${port}/fgtauth`
-    }
+    const targetIp = captiveParams.fw_ip || 'auth-thaid.dtam.moph.go.th'
+    const cleanIp = targetIp.split(':')[0]
+    const postTarget = `https://${cleanIp}:1442/fgtauth`
 
     if (magic) {
       const form = document.createElement('form')
@@ -313,8 +301,8 @@ export default function QRPortal({ keepaliveOnly }) {
     
     // Extract FortiGate Host dynamically from URL or URL param
     let fwHost = '';
-    const urlParam = params.get('URL') || params.get('url') || params.get('auth_url') || '';
-    if (urlParam && (urlParam.startsWith('http://') || urlParam.startsWith('https://'))) {
+    const urlParam = params.get('URL') || params.get('url') || '';
+    if (urlParam) {
       try {
         const parsedUrl = new URL(urlParam);
         fwHost = parsedUrl.hostname;
@@ -328,8 +316,7 @@ export default function QRPortal({ keepaliveOnly }) {
       ip: params.get('ip') || params.get('client_ip') || '',
       url: params.get('url') || params.get('redirect_url') || '',
       magic: params.get('magic') || '',
-      fw_ip: fwHost || params.get('fw_ip') || '10.1.1.77',
-      auth_url: urlParam || '',
+      fw_ip: fwHost || params.get('fw_ip') || '',
       type: params.get('type') || '',
     }
     setCaptiveParams(newParams)
@@ -605,7 +592,7 @@ export default function QRPortal({ keepaliveOnly }) {
         </div>
       )}
 
-      {/* ── QR READY / SCANNING (ADAPTIVE VIEW: IPHONE / ANDROID / PC) ── */}
+      {/* ── QR READY / SCANNING ─────────────────────────── */}
       {(phase === 'ready' || phase === 'scanning') && (
         <div className="portal-card">
           {/* Header */}
@@ -615,9 +602,6 @@ export default function QRPortal({ keepaliveOnly }) {
               <h1 className="header-title">ระบบตรวจสอบสิทธิ์เครือข่าย</h1>
               <p className="header-sub">DTAM Telemedicine Network Access</p>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-               <img src="/thaid.jpg" alt="ThaiD Logo" className="header-logo" style={{ borderRadius: '50%', height: '44px', width: '44px', border: '1px solid #e2e8f0' }} />
-            </div>
           </div>
 
           {/* WiFi indicator */}
@@ -626,126 +610,51 @@ export default function QRPortal({ keepaliveOnly }) {
             <span>Wi-Fi Authentication Required</span>
           </div>
 
-          {viewMode === 'direct' ? (
-            /* ── MOBILE DIRECT LOGIN VIEW (iPhone & Android) ── */
-            <div style={{ padding: '24px 20px 0', textAlign: 'center' }}>
-              <h2 style={{ fontSize: '20px', fontWeight: '800', color: 'var(--primary)', marginBottom: '8px' }}>
-                ยินดีต้อนรับสู่ระบบอินเทอร์เน็ต
-              </h2>
-              <p style={{ fontSize: '14px', color: 'var(--text-muted)', lineHeight: '1.6', marginBottom: '24px' }}>
-                สำหรับสมาร์ทโฟน (iPhone / Android) กรุณากดปุ่มด้านล่างเพื่อเปิดแอปพลิเคชัน <strong>ThaID</strong> และยืนยันตัวตนทันที
-              </p>
-
-              <button
-                onClick={() => {
-                  window.location.href = '/api/auth/login' + window.location.search;
-                }}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '14px',
-                  padding: '16px 20px',
-                  borderRadius: '12px',
-                  border: '2px solid #0F3A6C',
-                  background: 'linear-gradient(135deg, #0F3A6C 0%, #1a5a9a 100%)',
-                  color: 'white',
-                  cursor: 'pointer',
-                  fontSize: '17px',
-                  fontWeight: '700',
-                  boxShadow: '0 4px 14px rgba(15, 58, 108, 0.3)',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                <img src="/thaid.jpg" alt="ThaiD" style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'white' }} />
-                <span>เข้าสู่ระบบด้วยแอป ThaID</span>
-              </button>
-
-              <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #f1f5f9' }}>
-                <button
-                  onClick={() => setViewMode('qr')}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#0F3A6C',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    textDecoration: 'underline'
-                  }}
-                >
-                  📱 สลับไปหน้า QR Code (กรณีต้องการใช้อุปกรณ์อื่นสแกน)
-                </button>
-              </div>
+          {/* Instruction */}
+          <div className="qr-instruction">
+            <div className="step-row">
+              <span className="step-num">1</span>
+              <span>เปิดแอปพลิเคชัน <strong>ThaID</strong> บนสมาร์ทโฟน</span>
             </div>
-          ) : (
-            /* ── DESKTOP QR VIEW (PC / Mac / Laptop) ── */
-            <>
-              {/* Instruction */}
-              <div className="qr-instruction">
-                <div className="step-row">
-                  <span className="step-num">1</span>
-                  <span>เปิดแอปพลิเคชัน <strong>ThaID</strong> บนสมาร์ทโฟน</span>
-                </div>
-                <div className="step-row">
-                  <span className="step-num">2</span>
-                  <span>กด <strong>"สแกน QR Code"</strong> แล้วสแกน QR ด้านล่าง</span>
-                </div>
-                <div className="step-row">
-                  <span className="step-num">3</span>
-                  <span>ยืนยันตัวตนในแอป ThaID ให้เสร็จสิ้น</span>
-                </div>
-              </div>
+            <div className="step-row">
+              <span className="step-num">2</span>
+              <span>กด <strong>"สแกน QR Code"</strong> แล้วสแกน QR ด้านล่าง</span>
+            </div>
+            <div className="step-row">
+              <span className="step-num">3</span>
+              <span>ยืนยันตัวตนในแอป ThaID ให้เสร็จสิ้น</span>
+            </div>
+          </div>
 
-              {/* QR Code */}
-              <div className="qr-wrap">
-                <div className="qr-frame">
-                  <canvas ref={canvasRef} width={240} height={240} className="qr-canvas" />
-                  <div className="qr-corner qr-tl" />
-                  <div className="qr-corner qr-tr" />
-                  <div className="qr-corner qr-bl" />
-                  <div className="qr-corner qr-br" />
-                </div>
-                <div className="qr-label">
-                  <span className="qr-label-icon"><IconSmartphone /></span>
-                  <span>สแกนด้วยแอป ThaID</span>
-                </div>
-              </div>
+          {/* QR Code */}
+          <div className="qr-wrap">
+            <div className="qr-frame">
+              <canvas ref={canvasRef} width={240} height={240} className="qr-canvas" />
+              <div className="qr-corner qr-tl" />
+              <div className="qr-corner qr-tr" />
+              <div className="qr-corner qr-bl" />
+              <div className="qr-corner qr-br" />
+            </div>
+            <div className="qr-label">
+              <span className="qr-label-icon"><IconSmartphone /></span>
+              <span>สแกนด้วยแอป ThaID</span>
+            </div>
+          </div>
 
-              {/* Countdown */}
-              <div className="countdown-section">
-                <CountdownRing total={expiresIn} remaining={countdown} />
-                <p className="countdown-hint">QR Code หมดอายุใน</p>
-              </div>
+          {/* Countdown */}
+          <div className="countdown-section">
+            <CountdownRing total={expiresIn} remaining={countdown} />
+            <p className="countdown-hint">QR Code หมดอายุใน</p>
+          </div>
 
-              {/* Polling indicator */}
-              <div className="poll-indicator">
-                <span className="poll-dot" />
-                <span>กำลังรอการยืนยันจากมือถือ...</span>
-              </div>
-
-              <div style={{ marginTop: '14px', textAlign: 'center' }}>
-                <button
-                  onClick={() => setViewMode('direct')}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#0F3A6C',
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    textDecoration: 'underline'
-                  }}
-                >
-                  👉 หรือ เข้าสู่ระบบบนอุปกรณ์นี้โดยตรง (Direct Login)
-                </button>
-              </div>
-            </>
-          )}
+          {/* Polling indicator */}
+          <div className="poll-indicator">
+            <span className="poll-dot" />
+            <span>กำลังรอการยืนยัน...</span>
+          </div>
 
           {/* Footer */}
-          <div className="card-footer" style={{ marginTop: '20px' }}>
+          <div className="card-footer">
             <p>การเข้าใช้งานระบบถือว่าท่านยอมรับ</p>
             <a href="#" onClick={e => e.preventDefault()}>ข้อตกลงและเงื่อนไขการใช้งาน</a>
           </div>
