@@ -28,14 +28,12 @@ function App() {
     content = <Dashboard />
   } else if (currentPath === '/qr') {
     content = <QRPortal />
-  } else if (currentPath === '/keepalive') {
-    content = <QRPortal keepaliveOnly={true} />
   } else if (currentPath === '/logout') {
     content = <Logout />
-  } else if (currentPath === '/login') {
-    content = <Login />
+  } else if (currentPath === '/admin' || currentPath === '/create-guest') {
+    content = <CreateGuest />
   } else {
-    content = <QRPortal />
+    content = <Login />
   }
 
   return (
