@@ -757,6 +757,15 @@ async def auth_callback(request: Request, response: Response):
         fw_ip = captive_data.get("fw_ip", FORTIGATE_IP)
         original_url = captive_data.get("original_url", "")
         
+        # Determine dynamic FortiGate POST action URL
+        auth_action_url = captive_data.get("auth_url")
+        if not auth_action_url:
+            clean_fw_host = (captive_data.get("fw_ip") or FORTIGATE_IP).split(":")[0]
+            if FORTIGATE_AUTH_PORT and str(FORTIGATE_AUTH_PORT) not in ["443", "80", "0"]:
+                auth_action_url = f"https://{clean_fw_host}:{FORTIGATE_AUTH_PORT}{FORTIGATE_AUTH_PATH}"
+            else:
+                auth_action_url = f"https://{clean_fw_host}{FORTIGATE_AUTH_PATH}"
+
         standard_html_content = f"""<!DOCTYPE html>
 <html lang="th">
 <head>
@@ -794,7 +803,8 @@ async def auth_callback(request: Request, response: Response):
           ip: {json.dumps(ip)},
           url: {json.dumps(original_url)},
           magic: {json.dumps(magic)},
-          fw_ip: {json.dumps(fw_ip)}
+          fw_ip: {json.dumps(fw_ip)},
+          auth_url: {json.dumps(auth_action_url)}
         }};
         localStorage.setItem('captive_params', JSON.stringify(captiveData));
 
@@ -804,6 +814,7 @@ async def auth_callback(request: Request, response: Response):
           username: {json.dumps(username)},
           password: {json.dumps(password)},
           fw_ip: {json.dumps(fw_ip)},
+          auth_url: {json.dumps(auth_action_url)},
           fw_port: "{FORTIGATE_AUTH_PORT}",
           fw_path: "{FORTIGATE_AUTH_PATH}"
         }};
@@ -813,10 +824,10 @@ async def auth_callback(request: Request, response: Response):
         const form = document.getElementById('auth_form');
         form.submit();
         
-        // 4. นำทางหน้าต่างหลักไปยัง /keepalive ในอีก 3 วินาทีถัดไป เพื่อให้แน่ใจว่าเบราว์เซอร์ส่ง POST ไป FortiGate สำเร็จก่อนเปลี่ยนหน้า
+        // 4. นำทางหน้าต่างหลักไปยัง /keepalive ในอีก 2.5 วินาทีถัดไป
         setTimeout(function() {{
           window.location.href = '/keepalive';
-        }}, 3000);
+        }}, 2500);
       }} catch (err) {{
         console.error('Error in callback script:', err);
         window.location.href = '/keepalive';
@@ -827,7 +838,7 @@ async def auth_callback(request: Request, response: Response):
 <body>
   <iframe id="auth_iframe" name="auth_iframe" style="display: none;"></iframe>
   
-  <form id="auth_form" method="POST" action="https://{fw_ip}:1442/fgtauth" target="auth_iframe" style="display: none;">
+  <form id="auth_form" method="POST" action="{auth_action_url}" target="auth_iframe" style="display: none;">
     <input type="hidden" name="magic" value="{magic}" />
     <input type="hidden" name="username" value="{username}" />
     <input type="hidden" name="password" value="{password}" />

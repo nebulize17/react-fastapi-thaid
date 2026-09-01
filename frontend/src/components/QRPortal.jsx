@@ -148,7 +148,7 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
         formRef.current.submit();
         if (onSubmitted) {
           // หน่วงเวลาเล็กน้อยเพื่อให้ฟอร์ม submit สำเร็จก่อนเปลี่ยนหน้า
-          setTimeout(onSubmitted, 1000);
+          setTimeout(onSubmitted, 1200);
         }
       } else {
         // ถ้าไม่มีค่า magic (เปิดเว็บมาทดสอบตรงๆ) ให้เด้งไป Google เลย
@@ -160,10 +160,14 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
 
   if (!magic) return null
 
-  // บังคับยิงไปที่ IP และพอร์ตของวงนี้โดยตรง เพื่อป้องกันค่าเก่าที่ค้างมาจาก FortiGate
-  const targetIp = fwIp || 'auth-thaid.dtam.moph.go.th';
-  const cleanIp = targetIp.split(':')[0];
-  const postTarget = `https://${cleanIp}:1442/fgtauth`;
+  // ดึง URL ปลายทางของ FortiGate โดยอัตโนมัติ (เช่น https://10.1.1.77/fgtauth)
+  let postTarget = authUrl || '';
+  if (!postTarget) {
+    const targetIp = fwIp || '10.1.1.77';
+    const cleanIp = targetIp.split(':')[0];
+    const port = fwPort && !['443', '80', '1442'].includes(String(fwPort)) ? `:${fwPort}` : (targetIp.includes(':') ? `:${targetIp.split(':')[1]}` : '');
+    postTarget = `https://${cleanIp}${port}${fwPath || '/fgtauth'}`;
+  }
 
   return (
     <>
@@ -176,8 +180,8 @@ function FortigateAutoSubmitForm({ magic, fwIp, fwPort, fwPath, authUrl, usernam
         style={{ display: 'none' }}
       >
         <input type="hidden" name="magic" value={magic} />
-        <input type="hidden" name="username" value={username || "thanphichetwi"} />
-        <input type="hidden" name="password" value={password || "Benz1711"} />
+        <input type="hidden" name="username" value={username || ""} />
+        <input type="hidden" name="password" value={password || ""} />
       </form>
     </>
   )
@@ -226,9 +230,14 @@ export default function QRPortal({ keepaliveOnly }) {
     const magic = captiveParams.magic || ''
     const username = successData?.username || ''
     const password = successData?.password || ''
-    const targetIp = captiveParams.fw_ip || 'auth-thaid.dtam.moph.go.th'
-    const cleanIp = targetIp.split(':')[0]
-    const postTarget = `https://${cleanIp}:1442/fgtauth`
+    
+    let postTarget = captiveParams.auth_url || successData?.auth_url || ''
+    if (!postTarget) {
+      const targetIp = captiveParams.fw_ip || successData?.fw_ip || '10.1.1.77'
+      const cleanIp = targetIp.split(':')[0]
+      const port = targetIp.includes(':') ? `:${targetIp.split(':')[1]}` : ''
+      postTarget = `https://${cleanIp}${port}/fgtauth`
+    }
 
     if (magic) {
       const form = document.createElement('form')
@@ -301,8 +310,8 @@ export default function QRPortal({ keepaliveOnly }) {
     
     // Extract FortiGate Host dynamically from URL or URL param
     let fwHost = '';
-    const urlParam = params.get('URL') || params.get('url') || '';
-    if (urlParam) {
+    const urlParam = params.get('URL') || params.get('url') || params.get('auth_url') || '';
+    if (urlParam && (urlParam.startsWith('http://') || urlParam.startsWith('https://'))) {
       try {
         const parsedUrl = new URL(urlParam);
         fwHost = parsedUrl.hostname;
@@ -316,7 +325,8 @@ export default function QRPortal({ keepaliveOnly }) {
       ip: params.get('ip') || params.get('client_ip') || '',
       url: params.get('url') || params.get('redirect_url') || '',
       magic: params.get('magic') || '',
-      fw_ip: fwHost || params.get('fw_ip') || '',
+      fw_ip: fwHost || params.get('fw_ip') || '10.1.1.77',
+      auth_url: urlParam || '',
       type: params.get('type') || '',
     }
     setCaptiveParams(newParams)
