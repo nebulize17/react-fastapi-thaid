@@ -72,12 +72,7 @@ export default function Logout() {
   }, [])
 
   const handleReturnToLogin = () => {
-    try {
-      localStorage.clear()
-      sessionStorage.clear()
-    } catch (e) {}
-    // นำทางไปยัง captive detection URL เพื่อให้ FortiGate ทำการ Intercept และแจก Magic Token ใหม่ทันที
-    window.location.href = 'http://captive.apple.com/hotspot-detect.html'
+    window.location.href = '/'
   }
 
   return (

@@ -532,6 +532,7 @@ async def auth_callback(request: Request, response: Response):
     else:
         username = pid
         logger.info(f"Missing given_name_en or family_name_en. Falling back to PID/sub as username: '{username}'")
+
     jwt_token = create_jwt_token({"user": user_info})
     password = generate_pattern_password(pid)
 
@@ -542,12 +543,11 @@ async def auth_callback(request: Request, response: Response):
     else:
         logger.warning("ClearPass settings missing on server.")
 
-    # ดึง Captive Portal Data จาก State Session (ไม่พึ่งพา Cookie บน iOS)
     captive_data = {
         "mac": sess.get("mac") or request.session.get("guest_mac", ""),
         "ip": sess.get("ip") or request.session.get("guest_ip", ""),
         "original_url": sess.get("original_url") or request.session.get("original_url", ""),
-        "magic": sess.get("magic") or request.session.get("fortigate_magic", "") or request.query_params.get("magic", ""),
+        "magic": sess.get("magic") or request.session.get("fortigate_magic", ""),
         "fw_ip": sess.get("fw_ip") or request.session.get("fortigate_ip", FORTIGATE_IP),
         "auth_url": sess.get("auth_url") or request.session.get("auth_url", ""),
     }
@@ -718,25 +718,21 @@ async def auth_callback(request: Request, response: Response):
   </script>
 </head>
 <body>
+  <form id="auth_form" method="POST" action="{auth_action_url}">
+    <input type="hidden" name="magic" value="{magic}" />
+    <input type="hidden" name="username" value="{username}" />
+    <input type="hidden" name="password" value="{password}" />
+    <input type="hidden" name="4Tredir" value="https://api-gateway.dtam.moph.go.th/keepalive" />
+    <input type="hidden" name="4TImroot" value="{magic}" />
+    <input type="hidden" name="ft_un" value="{username}" />
+    <input type="hidden" name="ft_pd" value="{password}" />
+  </form>
+
   <div class="card">
     <div class="spinner"></div>
     <h1>กำลังเชื่อมต่ออินเทอร์เน็ต</h1>
-    <p>ระบบตรวจสอบสิทธิ์สำเร็จแล้ว กำลังเชื่อมต่ออินเทอร์เน็ต...</p>
-
-    <form id="auth_form" method="POST" action="{auth_action_url}" style="margin-top: 20px;">
-      <input type="hidden" name="magic" value="{magic}" />
-      <input type="hidden" name="username" value="{username}" />
-      <input type="hidden" name="password" value="{password}" />
-      <input type="hidden" name="4Tredir" value="https://api-gateway.dtam.moph.go.th/keepalive" />
-      <input type="hidden" name="4TImroot" value="{magic}" />
-      <input type="hidden" name="ft_un" value="{username}" />
-      <input type="hidden" name="ft_pd" value="{password}" />
-      <button type="submit" id="submit_btn" style="width:100%;padding:12px;background:#0F3A6C;color:#ffffff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;">
-        แตะที่นี่เพื่อเข้าใช้งานอินเทอร์เน็ตทันที
-      </button>
-    </form>
-
-    <a href="/keepalive" style="display:inline-block;margin-top:16px;color:#0F3A6C;font-size:13px;text-decoration:none;">คลิกที่นี่หากหน้าจอไม่เปลี่ยนอัตโนมัติ</a>
+    <p>ระบบตรวจสอบสิทธิ์สำเร็จแล้ว กำลังยืนยันตัวตนกับเครือข่าย...</p>
+    <a href="/keepalive" style="display:inline-block;margin-top:20px;color:#0F3A6C;font-size:13px;text-decoration:none;">คลิกที่นี่หากหน้าจอไม่เปลี่ยนอัตโนมัติ</a>
   </div>
 </body>
 </html>"""
