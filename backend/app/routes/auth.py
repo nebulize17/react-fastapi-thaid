@@ -105,16 +105,50 @@ def generate_pattern_password(pid: str) -> str:
     
     return f"{p0}{p1}{p2}{p3}{p4}{p5}{p6}{p7}"
 
+# In-memory token cache for ClearPass
+_cppm_token_cache = {
+    "access_token": "",
+    "expires_at": 0.0
+}
+
+async def get_cppm_access_token(client: httpx.AsyncClient) -> str:
+    global _cppm_token_cache
+    now = time.time()
+    if _cppm_token_cache["access_token"] and _cppm_token_cache["expires_at"] > (now + 60):
+        return _cppm_token_cache["access_token"]
+
+    try:
+        token_url = f"https://{CPPM_HOST}/api/oauth"
+        token_data = {
+            "grant_type": "client_credentials",
+            "client_id": CPPM_CLIENT_ID,
+            "client_secret": CPPM_CLIENT_SECRET
+        }
+        token_res = await client.post(token_url, data=token_data, timeout=6)
+        if token_res.status_code == 200:
+            data = token_res.json()
+            token = data.get("access_token", "")
+            expires_in = data.get("expires_in", 3600)
+            _cppm_token_cache = {
+                "access_token": token,
+                "expires_at": now + expires_in
+            }
+            logger.info("Successfully refreshed and cached ClearPass API Access Token.")
+            return token
+        else:
+            logger.error(f"ClearPass OAuth token failed: {token_res.text}")
+            return ""
+    except Exception as e:
+        logger.error(f"Exception getting ClearPass token: {str(e)}")
+        return ""
+
 
 # ============================================================
-# Helper: ClearPass Guest Account
+# Helper: ClearPass Sync User (Create or Patch Guest Account)
 # ============================================================
 async def sync_cppm_user(username: str, password: str, user_info: dict = None) -> bool:
     """
-    สร้างหรืออัปเดตบัญชีใน Aruba ClearPass Guest DB จากข้อมูล ThaiD:
-    - ค้นหาผ่าน /api/guest/username/{username} โดยตรง
-    - ถ้าพบ: PATCH อัปเดตรหัสผ่าน, ชื่อ-นามสกุล, เปิดใช้งาน (enabled=True), และรีเซ็ตเวลาใช้งาน
-    - ถ้าไม่พบ: POST สร้างบัญชีใหม่
+    Sync user account to ClearPass Guest Database with high performance.
     """
     if not CPPM_HOST or not CPPM_CLIENT_ID:
         logger.warning("ClearPass configuration missing. Skipping user sync.")
@@ -137,25 +171,14 @@ async def sync_cppm_user(username: str, password: str, user_info: dict = None) -
 
     try:
         async with httpx.AsyncClient(verify=False) as client:
-            token_url = f"https://{CPPM_HOST}/api/oauth"
-            token_data = {
-                "grant_type": "client_credentials",
-                "client_id": CPPM_CLIENT_ID,
-                "client_secret": CPPM_CLIENT_SECRET
-            }
-            token_res = await client.post(token_url, data=token_data, timeout=10)
-            if token_res.status_code != 200:
-                logger.error(f"ClearPass OAuth token failed: {token_res.text}")
+            access_token = await get_cppm_access_token(client)
+            if not access_token:
                 return False
 
-            access_token = token_res.json().get("access_token")
             headers = {
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json"
             }
-
-            user_url = f"https://{CPPM_HOST}/api/guest/username/{username}"
-            user_res = await client.get(user_url, headers=headers, timeout=10)
 
             user_payload = {
                 "enabled": True,
@@ -167,11 +190,14 @@ async def sync_cppm_user(username: str, password: str, user_info: dict = None) -
                 "role_id": 2
             }
 
+            user_url = f"https://{CPPM_HOST}/api/guest/username/{username}"
+            user_res = await client.get(user_url, headers=headers, timeout=6)
+
             if user_res.status_code == 200:
                 user_data = user_res.json()
                 user_id = user_data.get("id")
                 patch_url = f"https://{CPPM_HOST}/api/guest/{user_id}" if user_id else user_url
-                patch_res = await client.patch(patch_url, json=user_payload, headers=headers, timeout=10)
+                patch_res = await client.patch(patch_url, json=user_payload, headers=headers, timeout=6)
                 if patch_res.status_code in [200, 204]:
                     logger.info(f"Successfully updated ClearPass user '{username}' with new password & enabled=True")
                     return True
@@ -180,12 +206,12 @@ async def sync_cppm_user(username: str, password: str, user_info: dict = None) -
                     return False
             else:
                 create_url = f"https://{CPPM_HOST}/api/guest"
-                create_res = await client.post(create_url, json=user_payload, headers=headers, timeout=10)
+                create_res = await client.post(create_url, json=user_payload, headers=headers, timeout=6)
                 if create_res.status_code in [200, 201]:
                     logger.info(f"Successfully created new ClearPass user '{username}'")
                     return True
                 elif create_res.status_code == 409:
-                    patch_res = await client.patch(user_url, json=user_payload, headers=headers, timeout=10)
+                    patch_res = await client.patch(user_url, json=user_payload, headers=headers, timeout=6)
                     if patch_res.status_code in [200, 204]:
                         logger.info(f"Successfully patched ClearPass user '{username}' on 409 retry.")
                         return True
@@ -699,21 +725,54 @@ async def auth_callback(request: Request, response: Response):
     }}
   </style>
   <script>
+    var isSubmitting = false;
     function triggerAuth() {{
+      if (isSubmitting) return;
+      isSubmitting = true;
+
       try {{
-        const form = document.getElementById('auth_form');
-        if (form) form.submit();
+        var btn = document.getElementById('btn_connect');
+        if (btn) {{
+          btn.innerHTML = '<span>⏳ กำลังเข้าสู่ระบบ...</span>';
+          btn.style.opacity = '0.85';
+        }}
+
+        var form = document.getElementById('auth_form');
+        if (form) {{
+          // 1. Submit through iframe
+          form.submit();
+
+          // 2. Dual-channel: send background fetch as fallback
+          try {{
+            var formData = new FormData(form);
+            fetch(form.action, {{
+              method: 'POST',
+              body: formData,
+              mode: 'no-cors',
+              credentials: 'omit'
+            }}).catch(function(){{}});
+          }} catch (err) {{}}
+        }}
       }} catch (e) {{
         console.error('Submit error:', e);
       }}
+
+      // Navigate to /keepalive once iframe loads or after 1.4s safety timer
+      var iframe = document.getElementById('auth_iframe');
+      if (iframe) {{
+        iframe.onload = function() {{
+          window.location.href = '/keepalive';
+        }};
+      }}
+
       setTimeout(function() {{
         window.location.href = '/keepalive';
-      }}, 1000);
+      }}, 1400);
     }}
 
     window.onload = function() {{
       try {{
-        const captiveData = {{
+        var captiveData = {{
           mac: {json.dumps(mac)},
           ip: {json.dumps(ip)},
           url: {json.dumps(original_url)},
@@ -723,7 +782,7 @@ async def auth_callback(request: Request, response: Response):
         }};
         localStorage.setItem('captive_params', JSON.stringify(captiveData));
 
-        const successData = {{
+        var successData = {{
           user_info: {user_info_json},
           username: {json.dumps(username)},
           password: {json.dumps(password)},
@@ -737,14 +796,14 @@ async def auth_callback(request: Request, response: Response):
         console.error('Error in callback script:', err);
       }}
 
-      // ทำ Auto-submit ไปยัง FortiGate ทันที
+      // ยิงคำขอยืนยันสิทธิ์ทันทีแบบไม่หน่วงเวลา
       const magicVal = {json.dumps(magic)};
       if (magicVal) {{
-        setTimeout(triggerAuth, 500);
+        setTimeout(triggerAuth, 100);
       }} else {{
         setTimeout(function() {{
           window.location.href = '/keepalive';
-        }}, 800);
+        }}, 500);
       }}
     }};
   </script>
