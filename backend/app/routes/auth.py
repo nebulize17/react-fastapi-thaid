@@ -838,46 +838,61 @@ async def auth_callback(request: Request, response: Response):
         console.error('Error in callback script:', err);
       }}
 
-      // 3. ยิงคำขอยืนยันตัวตนไปยัง FortiGate (รองรับทั้ง iOS, Android และ PC)
+      // 3. แยกการยิงคำขอยืนยันตัวตนไปยัง FortiGate ระหว่าง iOS กับ Android/PC
+      const isIos = {json.dumps(is_ios)};
       const magicVal = {json.dumps(magic)};
       const authUrl = {json.dumps(auth_action_url)};
       const uVal = {json.dumps(username)};
       const pVal = {json.dumps(password)};
 
-      if (magicVal && authUrl) {{
-        try {{
-          const postBody = new URLSearchParams();
-          postBody.append('magic', magicVal);
-          postBody.append('username', uVal);
-          postBody.append('password', pVal);
-          fetch(authUrl, {{
-            method: 'POST',
-            body: postBody,
-            mode: 'no-cors'
-          }}).catch(function(e) {{}});
-        }} catch(err) {{}}
+      if (isIos) {{
+        // สำหรับ iOS / iPhone: WebKit ป้องกันการ submit ข้ามพอร์ต/โดเมนเข้า hidden iframe
+        // ทำการ Submit ตรงในหน้าต่างหลัก (Direct Top-Level POST) ไปยัง FortiGate ทันที
+        // เพื่อให้ FortiGate สร้าง Session และ Apple CNA ปลดล็อกการใช้งานอินเทอร์เน็ตได้ 100%
+        const form = document.getElementById('auth_form');
+        if (form) {{
+          form.removeAttribute('target');
+          form.submit();
+        }}
+      }} else {{
+        // สำหรับ Android และ PC (คงการทำงานเดิมไว้ 100%):
+        if (magicVal && authUrl) {{
+          try {{
+            const postBody = new URLSearchParams();
+            postBody.append('magic', magicVal);
+            postBody.append('username', uVal);
+            postBody.append('password', pVal);
+            fetch(authUrl, {{
+              method: 'POST',
+              body: postBody,
+              mode: 'no-cors'
+            }}).catch(function(e) {{}});
+          }} catch(err) {{}}
 
-        try {{
-          const form = document.getElementById('auth_form');
-          if (form) form.submit();
-        }} catch(e) {{}}
+          try {{
+            const form = document.getElementById('auth_form');
+            if (form) form.submit();
+          }} catch(e) {{}}
+        }}
+
+        setTimeout(function() {{
+          window.location.href = '/keepalive';
+        }}, 1800);
       }}
-
-      // หน่วงเวลา 1.8 วินาที เพื่อให้ทุกอุปกรณ์ (รวมถึง iOS Safari / CNA) ยิง HTTP POST ไปยัง FortiGate ให้เสร็จสมบูรณ์
-      setTimeout(function() {{
-        window.location.href = '/keepalive';
-      }}, 1800);
     }};
   </script>
 </head>
 <body>
-  <!-- Iframe สำหรับรับการตอบกลับจาก FortiGate โดยไม่รบกวนหน้าต่างหลักของ iOS Safari -->
+  <!-- Iframe สำหรับรับการตอบกลับจาก FortiGate สำหรับ Android/PC -->
   <iframe id="auth_iframe" name="auth_iframe" style="display: none;"></iframe>
 
   <form id="auth_form" method="POST" action="{auth_action_url}" target="auth_iframe" style="display: none;">
     <input type="hidden" name="magic" value="{magic}" />
     <input type="hidden" name="username" value="{username}" />
     <input type="hidden" name="password" value="{password}" />
+    <input type="hidden" name="4TImroot" value="{magic}" />
+    <input type="hidden" name="ft_un" value="{username}" />
+    <input type="hidden" name="ft_pd" value="{password}" />
   </form>
 
   <div class="card">
