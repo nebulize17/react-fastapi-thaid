@@ -838,44 +838,35 @@ async def auth_callback(request: Request, response: Response):
         console.error('Error in callback script:', err);
       }}
 
-      // 3. แยก Flow ระหว่าง iOS (ใช้ Server REST API Auth แล้ว) กับ Android/PC (ใช้ Direct Web Auth)
-      const isIos = {json.dumps(is_ios)};
-      if (isIos) {{
-        // สำหรับ iOS / Apple: อุปกรณ์ได้รับการยืนยันตัวตนบน FortiGate ผ่าน REST API จากฝั่งเซิร์ฟเวอร์เรียบร้อยแล้ว
-        // นำทางเข้าสู่หน้า Keepalive ทันทีอย่างราบรื่น
-        setTimeout(function() {{
-          window.location.href = '/keepalive';
-        }}, 800);
-      }} else {{
-        // สำหรับ Android และอุปกรณ์อื่นๆ: ยิงคำขอยืนยันตัวตนไปยัง FortiGate
-        const magicVal = {json.dumps(magic)};
-        const authUrl = {json.dumps(auth_action_url)};
-        const uVal = {json.dumps(username)};
-        const pVal = {json.dumps(password)};
+      // 3. ยิงคำขอยืนยันตัวตนไปยัง FortiGate (รองรับทั้ง iOS, Android และ PC)
+      const magicVal = {json.dumps(magic)};
+      const authUrl = {json.dumps(auth_action_url)};
+      const uVal = {json.dumps(username)};
+      const pVal = {json.dumps(password)};
 
-        if (magicVal && authUrl) {{
-          try {{
-            const postBody = new URLSearchParams();
-            postBody.append('magic', magicVal);
-            postBody.append('username', uVal);
-            postBody.append('password', pVal);
-            fetch(authUrl, {{
-              method: 'POST',
-              body: postBody,
-              mode: 'no-cors'
-            }}).catch(function(e) {{}});
-          }} catch(err) {{}}
+      if (magicVal && authUrl) {{
+        try {{
+          const postBody = new URLSearchParams();
+          postBody.append('magic', magicVal);
+          postBody.append('username', uVal);
+          postBody.append('password', pVal);
+          fetch(authUrl, {{
+            method: 'POST',
+            body: postBody,
+            mode: 'no-cors'
+          }}).catch(function(e) {{}});
+        }} catch(err) {{}}
 
-          try {{
-            const form = document.getElementById('auth_form');
-            if (form) form.submit();
-          }} catch(e) {{}}
-        }}
-
-        setTimeout(function() {{
-          window.location.href = '/keepalive';
-        }}, 1800);
+        try {{
+          const form = document.getElementById('auth_form');
+          if (form) form.submit();
+        }} catch(e) {{}}
       }}
+
+      // หน่วงเวลา 1.8 วินาที เพื่อให้ทุกอุปกรณ์ (รวมถึง iOS Safari / CNA) ยิง HTTP POST ไปยัง FortiGate ให้เสร็จสมบูรณ์
+      setTimeout(function() {{
+        window.location.href = '/keepalive';
+      }}, 1800);
     }};
   </script>
 </head>
