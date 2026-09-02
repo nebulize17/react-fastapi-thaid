@@ -648,6 +648,9 @@ async def auth_callback(request: Request, response: Response):
             else:
                 auth_action_url = f"https://{clean_fw_host}{FORTIGATE_AUTH_PATH}"
 
+        masked_pid = pid[:3] + "X" * (len(pid) - 6) + pid[-3:] if len(pid) >= 8 else ("X" * len(pid) if pid else "N/A")
+        thai_full_name = (user_info.get('title') or '') + ' ' + (user_info.get('name') or user_info.get('given_name_en') or pid)
+
         standard_html_content = f"""<!DOCTYPE html>
 <html lang="th">
 <head>
@@ -663,18 +666,40 @@ async def auth_callback(request: Request, response: Response):
       display: flex; align-items: center; justify-content: center; padding: 20px;
     }}
     .card {{
-      background: white; border-radius: 20px; padding: 40px 32px;
-      text-align: center; max-width: 380px; width: 100%;
+      background: white; border-radius: 20px; padding: 36px 28px;
+      text-align: center; max-width: 400px; width: 100%;
       box-shadow: 0 20px 60px rgba(0,0,0,0.3);
     }}
-    .spinner {{
-      width: 50px; height: 50px; border: 5px solid #eff6ff;
-      border-top-color: #0F3A6C; border-radius: 50%;
-      animation: spin 1s infinite linear; margin: 0 auto 24px;
+    .icon {{
+      width: 70px; height: 70px; background: #dcfce7;
+      border-radius: 50%; display: flex; align-items: center;
+      justify-content: center; margin: 0 auto 16px;
     }}
-    @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
-    h1 {{ color: #0F3A6C; font-size: 22px; font-weight: 700; margin-bottom: 12px; }}
-    p {{ color: #6b7280; font-size: 15px; line-height: 1.6; }}
+    .icon svg {{ width: 36px; height: 36px; color: #16a34a; }}
+    h1 {{ color: #0F3A6C; font-size: 22px; font-weight: 700; margin-bottom: 8px; }}
+    p {{ color: #6b7280; font-size: 14px; line-height: 1.5; }}
+    .user-box {{
+      background: #f8fafc; border-radius: 12px; padding: 14px;
+      margin: 20px 0; border: 1px solid #e2e8f0; text-align: left;
+    }}
+    .user-name {{ color: #0F3A6C; font-weight: 700; font-size: 16px; }}
+    .user-pid {{ color: #64748b; font-size: 13px; font-family: monospace; margin-top: 4px; }}
+    .submit-btn {{
+      width: 100%; padding: 15px 20px;
+      background: linear-gradient(135deg, #0F3A6C 0%, #1a5a9a 100%);
+      color: #ffffff; border: none; border-radius: 12px;
+      font-size: 16px; font-weight: 700; cursor: pointer;
+      box-shadow: 0 8px 20px rgba(15, 58, 108, 0.25);
+      transition: all 0.2s ease-in-out;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }}
+    .submit-btn:hover {{
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px rgba(15, 58, 108, 0.35);
+    }}
+    .auto-note {{
+      font-size: 12px; color: #94a3b8; margin-top: 14px;
+    }}
   </style>
   <script>
     window.onload = function() {{
@@ -703,12 +728,13 @@ async def auth_callback(request: Request, response: Response):
         console.error('Error in callback script:', err);
       }}
 
+      // ทำ Auto-submit หลัง 600ms (เผื่อ iOS WebKit อนุญาต)
       const magicVal = {json.dumps(magic)};
       if (magicVal) {{
         setTimeout(function() {{
           const form = document.getElementById('auth_form');
           if (form) form.submit();
-        }}, 500);
+        }}, 600);
       }} else {{
         setTimeout(function() {{
           window.location.href = '/keepalive';
@@ -718,21 +744,36 @@ async def auth_callback(request: Request, response: Response):
   </script>
 </head>
 <body>
-  <form id="auth_form" method="POST" action="{auth_action_url}">
-    <input type="hidden" name="magic" value="{magic}" />
-    <input type="hidden" name="username" value="{username}" />
-    <input type="hidden" name="password" value="{password}" />
-    <input type="hidden" name="4Tredir" value="https://api-gateway.dtam.moph.go.th/keepalive" />
-    <input type="hidden" name="4TImroot" value="{magic}" />
-    <input type="hidden" name="ft_un" value="{username}" />
-    <input type="hidden" name="ft_pd" value="{password}" />
-  </form>
-
   <div class="card">
-    <div class="spinner"></div>
-    <h1>กำลังเชื่อมต่ออินเทอร์เน็ต</h1>
-    <p>ระบบตรวจสอบสิทธิ์สำเร็จแล้ว กำลังยืนยันตัวตนกับเครือข่าย...</p>
-    <a href="/keepalive" style="display:inline-block;margin-top:20px;color:#0F3A6C;font-size:13px;text-decoration:none;">คลิกที่นี่หากหน้าจอไม่เปลี่ยนอัตโนมัติ</a>
+    <div class="icon">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" stroke="#16a34a"/>
+      </svg>
+    </div>
+    <h1>ยืนยันตัวตนสำเร็จ</h1>
+    <p>ระบบตรวจสอบสิทธิ์เรียบร้อยแล้ว</p>
+
+    <div class="user-box">
+      <div class="user-name">{thai_full_name}</div>
+      <div class="user-pid">เลขบัตร: {masked_pid}</div>
+    </div>
+
+    <form id="auth_form" method="POST" action="{auth_action_url}">
+      <input type="hidden" name="magic" value="{magic}" />
+      <input type="hidden" name="username" value="{username}" />
+      <input type="hidden" name="password" value="{password}" />
+      <input type="hidden" name="4Tredir" value="https://api-gateway.dtam.moph.go.th/keepalive" />
+      <input type="hidden" name="4TImroot" value="{magic}" />
+      <input type="hidden" name="ft_un" value="{username}" />
+      <input type="hidden" name="ft_pd" value="{password}" />
+      
+      <button type="submit" class="submit-btn" id="btn_connect">
+        <span>🚀 แตะที่นี่เพื่อเข้าสู่อินเทอร์เน็ตทันที</span>
+      </button>
+    </form>
+
+    <p class="auto-note">*(ระบบกำลังเชื่อมต่ออัตโนมัติ หรือแตะปุ่มด้านบนหากหน้าจอไม่เปลี่ยน)*</p>
+    <a href="/keepalive" style="display:inline-block;margin-top:14px;color:#0F3A6C;font-size:13px;text-decoration:none;">ไปหน้าควบคุมการใช้งาน</a>
   </div>
 </body>
 </html>"""
