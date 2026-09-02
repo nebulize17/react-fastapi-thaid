@@ -570,28 +570,8 @@ export default function QRPortal({ keepaliveOnly }) {
               className="logout-btn"
               onClick={() => {
                 const magic = captiveParams.magic || '';
-                const fwHost = (captiveParams.fw_ip || 'auth-thaid.dtam.moph.go.th').split(':')[0];
-                
-                // ล้างข้อมูลเซสชันในเครื่องทันที
-                try {
-                  localStorage.removeItem('thaid_success_data');
-                  localStorage.removeItem('captive_params');
-                } catch(e) {}
-
-                // ยิงแจ้ง Backend เพื่อ De-auth session บน FortiGate
-                try {
-                  fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
-                } catch(e) {}
-
-                // ส่งคำสั่ง de-auth ไปที่ FortiGate ในเบื้องหลัง
-                try {
-                  if (magic && navigator.sendBeacon) {
-                    navigator.sendBeacon(`https://${fwHost}:1442/logout?${magic}`);
-                  }
-                } catch(e) {}
-
-                // นำทางไปหน้า Logout ของ DTAM อย่างสวยงาม
-                window.location.href = '/logout';
+                const fwIp = captiveParams.fw_ip || '';
+                window.location.href = `/logout?magic=${encodeURIComponent(magic)}&fw_ip=${encodeURIComponent(fwIp)}`;
               }}
             >
               <IconLogOut />

@@ -68,15 +68,15 @@ def create_jwt_token(data: dict):
 # ============================================================
 def build_thaid_auth_url(session_id: str, redirect_uri: str) -> str:
     """
-    สร้าง ThaiD OAuth2 Authorization URL สำหรับ QR Code และ Direct Login
+    สร้าง ThaiD OAuth2 Authorization URL สำหรับ QR Code โดยตรง
     - state = session_id (เพื่อให้ ThaiD callback กลับมาพร้อม session_id นี้)
-    - scope = openid pid title title_en given_name_en family_name_en name name_en
+    - scope = openid pid (เสถียรและพอดีกับการใช้ตรวจสิทธิ์)
     """
     params = {
         "response_type": "code",
         "client_id": THAID_CLIENT_ID,
         "redirect_uri": redirect_uri,
-        "scope": "openid pid title title_en given_name_en family_name_en name name_en",
+        "scope": "openid pid",
         "state": session_id
     }
     auth_endpoint = "https://imauth.bora.dopa.go.th/api/v2/oauth2/auth/"
@@ -115,31 +115,27 @@ def generate_pattern_password(pid: str) -> str:
 # ============================================================
 # Helper: ClearPass Guest Account
 # ============================================================
-async def sync_cppm_user(username: str, password: str, user_info: dict = None) -> bool:
+async def create_cppm_user(username: str, password: str, user_info: dict = None):
     """
-    สร้างหรืออัปเดตบัญชีใน Aruba ClearPass Guest DB จากข้อมูล ThaiD:
-    - ค้นหาผ่าน /api/guest/username/{username} โดยตรง (ClearPass REST API Standard)
-    - ถ้าพบ: PATCH อัปเดตรหัสผ่าน, ชื่อ-นามสกุล, เปิดใช้งาน (enabled=True), และรีเซ็ตเวลาใช้งาน
-    - ถ้าไม่พบ: POST สร้างบัญชีใหม่
+    Create a guest account in Aruba ClearPass dynamically mapping ThaiD attributes.
     """
     if not CPPM_HOST or not CPPM_CLIENT_ID:
-        logger.warning("ClearPass configuration missing. Skipping user sync.")
+        logger.warning("ClearPass configuration missing. Skipping user creation.")
         return False
 
     user_info = user_info or {}
     pid = user_info.get("pid") or user_info.get("sub", "")
-    thai_name = (user_info.get("name") or "").strip()
-    english_name = (user_info.get("name_en") or "").strip()
-    title_th = (user_info.get("title") or "").strip()
+    thai_name = user_info.get("name", "")
+    english_name = user_info.get("name_en", "")
     
-    if thai_name:
-        full_thai_name = f"{title_th} {thai_name}".strip() if title_th and not thai_name.startswith(title_th) else thai_name
-    else:
-        full_thai_name = english_name or f"ThaiD User {username}"
+    # Map to ClearPass Guest fields
+    visitor_name = thai_name if thai_name else (english_name if english_name else f"ThaiD User {username}")
     
-    visitor_name = full_thai_name
-    masked_pid = pid[:3] + "X" * (len(pid) - 6) + pid[-3:] if len(pid) >= 8 else ("X" * len(pid) if pid else "N/A")
-    notes = f"ThaiD Authentication | PID: {masked_pid} | Name (TH): {full_thai_name} | Name (EN): {english_name} | Synced: {datetime.now(timezone.utc).isoformat()}"
+    # Mask PID for security (e.g. 1101500387514 -> 110XXXXXX7514)
+    masked_pid = pid[:3] + "X" * (len(pid) - 6) + pid[-3:] if len(pid) >= 8 else "X" * len(pid)
+    
+    # Store masked PID and metadata in the ClearPass notes field for tracking (No plain password stored)
+    notes = f"ThaiD QR Authentication. PID: {masked_pid}. Name (TH): {thai_name}. Name (EN): {english_name}. Authenticated at: {datetime.now(timezone.utc).isoformat()}"
 
     try:
         async with httpx.AsyncClient(verify=False) as client:
@@ -149,90 +145,38 @@ async def sync_cppm_user(username: str, password: str, user_info: dict = None) -
                 "client_id": CPPM_CLIENT_ID,
                 "client_secret": CPPM_CLIENT_SECRET
             }
-            token_res = await client.post(token_url, data=token_data, timeout=10)
-            if token_res.status_code != 200:
-                logger.error(f"ClearPass OAuth token failed: {token_res.text}")
-                return False
-
+            token_res = await client.post(token_url, data=token_data)
+            token_res.raise_for_status()
             access_token = token_res.json().get("access_token")
-            headers = {
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json"
-            }
 
-            # 1. ตรวจสอบผู้ใช้ผ่าน endpoint ตรง /api/guest/username/{username}
-            user_url = f"https://{CPPM_HOST}/api/guest/username/{username}"
-            user_res = await client.get(user_url, headers=headers, timeout=10)
-
+            user_url = f"https://{CPPM_HOST}/api/guest"
             user_payload = {
                 "enabled": True,
                 "username": username,
                 "password": password,
                 "visitor_name": visitor_name,
                 "notes": notes,
-                "expire_after": 480,
+                "expire_after": 480,  # 8 hours
                 "role_id": 2
             }
+            headers = {"Authorization": f"Bearer {access_token}"}
+            user_res = await client.post(user_url, json=user_payload, headers=headers)
 
-            if user_res.status_code == 200:
-                user_data = user_res.json()
-                user_id = user_data.get("id")
-                patch_url = f"https://{CPPM_HOST}/api/guest/{user_id}" if user_id else user_url
-                patch_res = await client.patch(patch_url, json=user_payload, headers=headers, timeout=10)
-                if patch_res.status_code in [200, 204]:
-                    logger.info(f"Successfully updated ClearPass user '{username}' (ID: {user_id}, Name: {visitor_name}) with new password & enabled=True")
-                    return True
-                else:
-                    logger.error(f"Failed to patch ClearPass user '{username}': {patch_res.text}")
-                    return False
+            if user_res.status_code in [201, 200, 409]:
+                logger.info(f"ClearPass user {username} mapped successfully or already exists.")
+                return True
             else:
-                # 2. ถ้ายังไม่มี ให้สร้างใหม่
-                create_url = f"https://{CPPM_HOST}/api/guest"
-                create_res = await client.post(create_url, json=user_payload, headers=headers, timeout=10)
-                if create_res.status_code in [200, 201]:
-                    logger.info(f"Successfully created new ClearPass user '{username}' (Name: {visitor_name})")
-                    return True
-                elif create_res.status_code == 409:
-                    # กรณีชน 409 Conflict ให้ PATCH ไปที่ username ตรงๆ
-                    patch_res = await client.patch(user_url, json=user_payload, headers=headers, timeout=10)
-                    if patch_res.status_code in [200, 204]:
-                        logger.info(f"Successfully patched ClearPass user '{username}' on 409 retry.")
-                        return True
-                logger.error(f"Failed to create ClearPass user '{username}': {create_res.text}")
+                logger.error(f"ClearPass User Creation Failed: {user_res.text}")
                 return False
-
     except Exception as e:
-        logger.error(f"Exception connecting to ClearPass: {str(e)}")
+        logger.error(f"Error connecting to ClearPass: {str(e)}")
         return False
-
-
-# ============================================================
-# Helper: Extract Client Real IP
-# ============================================================
-def extract_client_ip(request: Request, ip_param: str = None) -> str:
-    """ดึง Real Client IP ของผู้ใช้จาก Query Param, Header X-Forwarded-For หรือ Socket Connection"""
-    if ip_param and not any(c.isalpha() for c in ip_param) and "." in ip_param and ":" not in ip_param:
-        return ip_param.strip()
-
-    x_forwarded_for = request.headers.get("x-forwarded-for")
-    if x_forwarded_for:
-        parts = [p.strip() for p in x_forwarded_for.split(",")]
-        for p in parts:
-            if not any(c.isalpha() for p in p) and ("192.168." in p or "10." in p or "172." in p):
-                return p
-        return parts[0]
-
-    x_real_ip = request.headers.get("x-real-ip")
-    if x_real_ip and not any(c.isalpha() for c in x_real_ip):
-        return x_real_ip.strip()
-
-    return request.client.host if request.client else ""
 
 
 # ============================================================
 # Helper: FortiGate REST API Authentication
 # ============================================================
-async def authenticate_fortigate_api(username: str, client_ip: str) -> bool:
+async def authenticate_fortigate_api(username: str, client_ip: str):
     """
     Authenticate the user session directly on FortiGate via REST API.
     Endpoint: POST /api/v2/monitor/user/firewall/auth
@@ -245,54 +189,51 @@ async def authenticate_fortigate_api(username: str, client_ip: str) -> bool:
         logger.warning("Client IP is missing. Cannot authenticate session via REST API.")
         return False
 
-    api_hosts = [
-        FORTIGATE_IP.split(":")[0] if FORTIGATE_IP else "",
-        os.getenv("FORTIGATE_API_HOST", "10.1.2.254"),
-        "10.1.2.254",
-        "192.168.254.253",
-        "10.1.1.254",
-        "10.0.1.254"
-    ]
-    seen = set()
-    hosts = [h for h in api_hosts if h and not (h in seen or seen.add(h))]
-
-    fw_username = username
-    server_names = [FORTIGATE_AUTH_SERVER or "Clearpass-ThaiD", "Clearpass-DTAM", ""]
-
+    url = f"https://{FORTIGATE_IP}/api/v2/monitor/user/firewall/auth"
     headers = {
         "Authorization": f"Bearer {FORTIGATE_API_TOKEN}",
         "Content-Type": "application/json"
     }
+    # ใช้ Dynamic User ที่ได้จาก ThaiD / ClearPass
+    fw_username = username
+    
+    # ส่งการตรวจสิทธิ์ทั้งหมดไปที่กลุ่ม Clearpass-DTAM (สำหรับผู้ใช้ ClearPass Guest ทุกคน)
+    fw_server = FORTIGATE_AUTH_SERVER if FORTIGATE_AUTH_SERVER and FORTIGATE_AUTH_SERVER != "local" else "Clearpass-DTAM"
 
+    payload = {
+        "ip": client_ip,
+        "username": fw_username,
+        "server": fw_server
+    }
+
+    logger.info(f"Sending FortiGate REST API Auth for user '{fw_username}' (Real user: '{username}', IP: {client_ip}) to {url}")
     try:
+        # Disable SSL verification since FortiGate might use self-signed certs in PoC
         async with httpx.AsyncClient(verify=False) as client:
-            for host in hosts:
-                for s_name in server_names:
-                    url = f"https://{host}/api/v2/monitor/user/firewall/auth"
-                    payload = {"ip": client_ip, "username": fw_username}
-                    if s_name:
-                        payload["server"] = s_name
+            res = await client.post(url, json=payload, headers=headers, timeout=10)
+            logger.info(f"FortiGate REST API response status: {res.status_code}")
+            
+            try:
+                res_data = res.json()
+                logger.info(f"FortiGate REST API response: {json.dumps(res_data)}")
+            except Exception:
+                logger.info(f"FortiGate REST API raw response: {res.text}")
 
-                    try:
-                        logger.info(f"Attempting FortiGate REST API Auth for '{fw_username}' (IP: {client_ip}) on {url} (server: {s_name or 'None'})")
-                        res = await client.post(url, json=payload, headers=headers, params={"access_token": FORTIGATE_API_TOKEN}, timeout=4)
-                        logger.info(f"FortiGate API response ({res.status_code}): {res.text}")
-                        if res.status_code in [200, 201]:
-                            logger.info(f"Successfully authenticated on FortiGate via REST API on {host} for user '{fw_username}'!")
-                            return True
-                    except Exception as req_err:
-                        logger.warning(f"Error trying FortiGate API on {host}: {str(req_err)}")
-                        continue
+            if res.status_code in [200, 201]:
+                logger.info(f"Successfully authenticated session on FortiGate via REST API for user '{username}'")
+                return True
+            else:
+                logger.error(f"FortiGate REST API Authentication Failed: {res.text}")
+                return False
     except Exception as e:
         logger.error(f"Error calling FortiGate REST API: {str(e)}")
         return False
-    return False
 
 
 # ============================================================
 # Helper: FortiGate REST API De-authentication (Logout)
 # ============================================================
-async def deauthenticate_fortigate_api(client_ip: str) -> bool:
+async def deauthenticate_fortigate_api(client_ip: str):
     """
     De-authenticate user session on FortiGate via REST API.
     Endpoint: POST /api/v2/monitor/user/firewall/deauth
@@ -305,17 +246,7 @@ async def deauthenticate_fortigate_api(client_ip: str) -> bool:
         logger.warning("Client IP is missing. Cannot de-authenticate session via REST API.")
         return False
 
-    api_hosts = [
-        FORTIGATE_IP.split(":")[0] if FORTIGATE_IP else "",
-        os.getenv("FORTIGATE_API_HOST", "10.1.2.254"),
-        "10.1.2.254",
-        "192.168.254.253",
-        "10.1.1.254",
-        "10.0.1.254"
-    ]
-    seen = set()
-    hosts = [h for h in api_hosts if h and not (h in seen or seen.add(h))]
-
+    url = f"https://{FORTIGATE_IP}/api/v2/monitor/user/firewall/deauth"
     headers = {
         "Authorization": f"Bearer {FORTIGATE_API_TOKEN}",
         "Content-Type": "application/json"
@@ -324,24 +255,21 @@ async def deauthenticate_fortigate_api(client_ip: str) -> bool:
         "ip": client_ip
     }
 
+    logger.info(f"Sending FortiGate REST API Deauth for IP '{client_ip}' to {url}")
     try:
         async with httpx.AsyncClient(verify=False) as client:
-            for host in hosts:
-                url = f"https://{host}/api/v2/monitor/user/firewall/deauth"
-                try:
-                    logger.info(f"Sending FortiGate REST API Deauth for IP '{client_ip}' to {url}")
-                    res = await client.post(url, json=payload, headers=headers, params={"access_token": FORTIGATE_API_TOKEN}, timeout=4)
-                    logger.info(f"FortiGate REST API Deauth response ({res.status_code}): {res.text}")
-                    if res.status_code in [200, 201]:
-                        logger.info(f"Successfully deauthenticated session on FortiGate for IP '{client_ip}' on {host}")
-                        return True
-                except Exception as req_err:
-                    logger.warning(f"Error trying FortiGate Deauth API on {host}: {str(req_err)}")
-                    continue
+            res = await client.post(url, json=payload, headers=headers, timeout=8)
+            logger.info(f"FortiGate REST API Deauth response status: {res.status_code}")
+            try:
+                res_data = res.json()
+                logger.info(f"FortiGate REST API Deauth response: {json.dumps(res_data)}")
+            except Exception:
+                logger.info(f"FortiGate REST API Deauth raw response: {res.text}")
+
+            return res.status_code in [200, 201]
     except Exception as e:
         logger.error(f"Error calling FortiGate Deauth REST API: {str(e)}")
         return False
-    return False
 # ============================================================
 def cleanup_expired_sessions(qr_sessions: dict):
     """ลบ session ที่หมดอายุแล้ว"""
@@ -394,8 +322,17 @@ async def create_qr_session(
     elif fw_ip:
         effective_fw_ip = fw_ip.split(":")[0]
 
-    # Extract client real IP using helper
-    client_ip = extract_client_ip(request, ip)
+    # Extract client real IP (ignore if it is a hostname like 'auth.dtam.moph.go.th')
+    client_ip = ""
+    if ip and not any(c.isalpha() for c in ip):
+        client_ip = ip
+
+    if not client_ip:
+        x_forwarded_for = request.headers.get("x-forwarded-for")
+        if x_forwarded_for:
+            client_ip = x_forwarded_for.split(",")[0].strip()
+        else:
+            client_ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
 
     qr_sessions[session_id] = {
         "status": "pending",
@@ -510,8 +447,17 @@ async def login(
     elif fw_ip and "api-gateway" not in fw_ip:
         effective_fw_host = fw_ip.split(":")[0]
 
-    # Extract client real IP using helper
-    real_ip = extract_client_ip(request, ip)
+    # Extract client real IP (ignore if it is a hostname like 'auth.dtam.moph.go.th')
+    real_ip = ""
+    if ip and not any(c.isalpha() for c in ip):
+        real_ip = ip
+
+    if not real_ip:
+        x_forwarded_for = request.headers.get("x-forwarded-for")
+        if x_forwarded_for:
+            real_ip = x_forwarded_for.split(",")[0].strip()
+        else:
+            real_ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
 
     # บันทึก session ลงใน In-Memory qr_sessions store ผูกกับ state UUID
     # ป้องกัน Session Cookie หายเมื่อ iOS สลับจาก CNA (Captive Network Assistant) -> ThaiD App -> Safari
@@ -632,18 +578,17 @@ async def auth_callback(request: Request, response: Response):
     logger.info(f"ThaiD Callback success! PID: {pid}")
 
     # Calculate custom username based on: English First Name + First 2 chars of English Last Name (lowercase)
-    import re
-    given = (user_info.get("given_name_en") or "").strip()
-    family = (user_info.get("family_name_en") or "").strip()
-    clean_given = re.sub(r'[^a-zA-Z0-9]', '', given)
-    clean_family = re.sub(r'[^a-zA-Z0-9]', '', family)
-
-    if clean_given:
-        username = (clean_given + clean_family[:2]).lower()
+    given = user_info.get("given_name_en", "")
+    family = user_info.get("family_name_en", "")
+    if given and family:
+        username = (given.strip() + family.strip()[:2]).lower()
         logger.info(f"Calculated username '{username}' from English name: '{given} {family}'")
     else:
         username = pid
         logger.info(f"Missing given_name_en or family_name_en. Falling back to PID/sub as username: '{username}'")
+
+
+
 
     # สร้าง JWT session token
     jwt_token = create_jwt_token({"user": user_info})
@@ -651,13 +596,87 @@ async def auth_callback(request: Request, response: Response):
     # กำหนด password เริ่มต้นตาม pattern 3Th6ofvN
     password = generate_pattern_password(pid)
 
-    # ซิงก์บัญชีผู้ใช้ใน ClearPass Guest Database (สร้างใหม่พร้อมชื่อ-นามสกุล หรือ อัปเดตสถานะและรหัสผ่าน)
+    # ตรวจสอบว่ามีบัญชีนี้อยู่ใน ClearPass Guest Database แล้วหรือไม่
     if CPPM_HOST and CPPM_CLIENT_ID:
-        cppm_ok = await sync_cppm_user(username, password, user_info)
-        if not cppm_ok:
-            logger.warning(f"ClearPass sync for '{username}' did not complete, proceeding with login flow.")
+        try:
+            async with httpx.AsyncClient(verify=False) as client:
+                token_url = f"https://{CPPM_HOST}/api/oauth"
+                token_data = {
+                    "grant_type": "client_credentials",
+                    "client_id": CPPM_CLIENT_ID,
+                    "client_secret": CPPM_CLIENT_SECRET
+                }
+                token_res = await client.post(token_url, data=token_data, timeout=10)
+                if token_res.status_code != 200:
+                    logger.error("Failed to get ClearPass access token.")
+                    return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_connection_failed")
+
+                access_token = token_res.json().get("access_token")
+                
+                # เช็คข้อมูลผู้เข้าใช้ในฐานข้อมูลเกสท์ของ ClearPass
+                user_url = f"https://{CPPM_HOST}/api/guest/username/{username}"
+                headers = {"Authorization": f"Bearer {access_token}"}
+                user_res = await client.get(user_url, headers=headers, timeout=10)
+                
+                if user_res.status_code == 200:
+                    user_data = user_res.json()
+                    
+                    notes = user_data.get("notes", "")
+                    db_password = None
+                    
+                    # 1. เช็คว่าเป็นบัญชีที่สร้างจากระบบ ThaiD หรือไม่ (ดูว่ามี "ThaiD" ใน notes)
+                    is_thaid_user = "ThaiD" in notes
+                    
+                    if is_thaid_user:
+                        # คำนวณรหัสผ่านจาก PID ที่ได้มาจาก callback ทันที
+                        db_password = generate_pattern_password(pid)
+                        logger.info(f"Recognized ThaiD user '{username}'. Dynamic password regenerated from PID.")
+                    elif "PWD:" in notes:
+                        # 2. บัญชีประเภทคูปองเกสท์ดึงรหัสผ่านธรรมดาจาก Notes
+                        db_password = notes.split("PWD:")[-1].strip()
+                        logger.info(f"Successfully extracted stored password from ClearPass notes for user '{username}'")
+                    
+                    # 3. กรณีไม่มีลายเซ็น ThaiD และไม่มีฟิลด์ PWD: ใน notes (กรณีบัญชีเดิมตกค้าง)
+                    if not db_password:
+                        logger.info(f"No password signature in notes for '{username}'. Dynamically updating ClearPass password to match username.")
+                        user_id = user_data.get("id")
+                        update_url = f"https://{CPPM_HOST}/api/guest/username/{username}"
+                        if user_id:
+                            update_url = f"https://{CPPM_HOST}/api/guest/{user_id}"
+                        
+                        patch_payload = {"password": username}
+                        patch_headers = {
+                            "Authorization": f"Bearer {access_token}",
+                            "Content-Type": "application/json"
+                        }
+                        try:
+                            patch_res = await client.patch(update_url, json=patch_payload, headers=patch_headers, timeout=10)
+                            if patch_res.status_code in [200, 204]:
+                                db_password = username
+                                logger.info(f"Successfully updated ClearPass user '{username}' password to match username.")
+                            else:
+                                logger.error(f"Failed to patch ClearPass password: {patch_res.text}")
+                        except Exception as patch_err:
+                            logger.error(f"Exception during ClearPass password patch: {str(patch_err)}")
+                    
+                    # 4. นำรหัสผ่านที่ได้ไปใช้เข้า Captive Portal
+                    password = db_password or username
+                    logger.info(f"Using password for FortiGate captive portal: {password}")
+                else:
+                    # กรณีไม่มี user บน clearpass ให้ทำการสร้างบัญชีเกสท์ใหม่ในระบบ ClearPass อัตโนมัติ
+                    logger.info(f"User '{username}' not found in ClearPass. Creating new user dynamically.")
+                    created = await create_cppm_user(username, password, user_info)
+                    if not created:
+                        logger.error(f"Failed to dynamically create ClearPass user '{username}'")
+                        return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_creation_failed")
+                    
+                    logger.info(f"Using password for FortiGate captive portal (Dynamically Created User): {password}")
+        except Exception as e:
+            logger.error(f"Error querying existing ClearPass user in auth_callback: {str(e)}")
+            return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_query_error")
     else:
-        logger.warning("ClearPass settings missing on server.")
+        logger.error("ClearPass settings missing on server.")
+        return RedirectResponse(url=f"{FRONTEND_URL}/?error=cppm_config_missing")
 
     # ============================================================
     # ดึง Captive Portal Data จาก State Session (ไม่พึ่งพา Cookie บน iOS)
@@ -670,15 +689,11 @@ async def auth_callback(request: Request, response: Response):
         "auth_url": sess.get("auth_url") or request.session.get("auth_url", ""),
     }
 
-    # ปลดล็อกสิทธิ์บน FortiGate REST API ทันที (Synchronous) เพื่อการันตีว่า Firewall เปิดเน็ตให้ทันทีก่อนส่งหน้าเว็บกลับไป
-    client_ip = extract_client_ip(request, captive_data.get("ip"))
+    # ยิง FortiGate REST API ในเบื้องหลังคู่ขนานเพื่อการันตีการเปิดสิทธิ์ 100%
+    client_ip = captive_data.get("ip")
     if client_ip and FORTIGATE_API_TOKEN:
-        logger.info(f"Authenticating session on FortiGate REST API for username '{username}' and IP '{client_ip}'")
-        try:
-            auth_ok = await authenticate_fortigate_api(username, client_ip)
-            logger.info(f"FortiGate REST API Auth result for '{username}' (IP: {client_ip}): {auth_ok}")
-        except Exception as api_err:
-            logger.error(f"FortiGate API Auth error: {str(api_err)}")
+        logger.info(f"Triggering background FortiGate REST API Auth for username '{username}' and IP '{client_ip}'")
+        asyncio.create_task(authenticate_fortigate_api(username, client_ip))
 
     # ============================================================
     # QR Flow vs Direct Flow Branching
@@ -765,10 +780,6 @@ async def auth_callback(request: Request, response: Response):
         fw_ip = captive_data.get("fw_ip", FORTIGATE_IP)
         original_url = captive_data.get("original_url", "")
         
-        user_agent = request.headers.get("user-agent", "").lower()
-        is_ios = any(d in user_agent for d in ["iphone", "ipad", "ipod", "macintosh", "mac os x", "darwin", "cfnetwork"])
-        logger.info(f"Direct flow device detection - User-Agent: '{user_agent[:60]}...', is_ios: {is_ios}")
-
         # Determine dynamic FortiGate POST action URL
         auth_action_url = captive_data.get("auth_url")
         if not auth_action_url or "api-gateway" in auth_action_url or not auth_action_url.endswith("/fgtauth"):
@@ -837,14 +848,15 @@ async def auth_callback(request: Request, response: Response):
         console.error('Error in callback script:', err);
       }}
 
-      // 3. ทำ Direct Form Submit ไปยัง FortiGate พร้อมพารามิเตอร์ 4Tredir (รองรับทั้ง Login ครั้งแรก และ Re-login หลัง Logout)
-      const authUrl = {json.dumps(auth_action_url)};
-      if (authUrl) {{
+      // 3. ทำ Direct Form Submit ไปยัง FortiGate โดยตรง (ไม่ใช้ hidden iframe เพื่อไม่ให้ iOS Safari บล็อก)
+      const magicVal = {json.dumps(magic)};
+      if (magicVal) {{
         setTimeout(function() {{
           const form = document.getElementById('auth_form');
           if (form) form.submit();
         }}, 500);
       }} else {{
+        // ถ้าไม่มี magic token (เข้าเว็บตรงๆ) ให้นำทางไป /keepalive
         setTimeout(function() {{
           window.location.href = '/keepalive';
         }}, 800);
@@ -853,22 +865,18 @@ async def auth_callback(request: Request, response: Response):
   </script>
 </head>
 <body>
-  <!-- ทำ Form Submit ตรงไปยัง FortiGate พร้อมกำหนด 4Tredir เพื่อให้ Firewall เป็นตัว Redirect กลับมาที่ /keepalive -->
+  <!-- ทำ Form Submit ตรงไปยัง FortiGate พร้อมกำหนด 4Tredir ไปยัง /keepalive -->
   <form id="auth_form" method="POST" action="{auth_action_url}">
     <input type="hidden" name="magic" value="{magic}" />
     <input type="hidden" name="username" value="{username}" />
     <input type="hidden" name="password" value="{password}" />
     <input type="hidden" name="4Tredir" value="https://api-gateway.dtam.moph.go.th/keepalive" />
-    <input type="hidden" name="4TImroot" value="{magic}" />
-    <input type="hidden" name="ft_un" value="{username}" />
-    <input type="hidden" name="ft_pd" value="{password}" />
   </form>
 
   <div class="card">
     <div class="spinner"></div>
     <h1>กำลังเชื่อมต่ออินเทอร์เน็ต</h1>
     <p>ระบบตรวจสอบสิทธิ์สำเร็จแล้ว กำลังยืนยันตัวตนกับเครือข่าย...</p>
-    <a href="/keepalive" style="display:inline-block;margin-top:20px;color:#0F3A6C;font-size:13px;text-decoration:none;">คลิกที่นี่หากหน้าจอไม่เปลี่ยนอัตโนมัติ</a>
   </div>
 </body>
 </html>"""
@@ -888,14 +896,16 @@ async def auth_callback(request: Request, response: Response):
 @router.post("/logout")
 async def logout(request: Request, response: Response):
     """Clear the auth cookie and de-authenticate the session from FortiGate."""
-    client_ip = extract_client_ip(request)
+    client_ip = ""
+    x_forwarded_for = request.headers.get("x-forwarded-for")
+    if x_forwarded_for:
+        client_ip = x_forwarded_for.split(",")[0].strip()
+    else:
+        client_ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
 
     if client_ip and FORTIGATE_API_TOKEN:
-        logger.info(f"Triggering FortiGate REST API deauth for IP: {client_ip}")
-        try:
-            await deauthenticate_fortigate_api(client_ip)
-        except Exception as deauth_err:
-            logger.error(f"Deauth error: {str(deauth_err)}")
+        logger.info(f"Triggering FortiGate background deauth for IP: {client_ip}")
+        asyncio.create_task(deauthenticate_fortigate_api(client_ip))
 
     res = JSONResponse({"status": "success", "message": "Logged out successfully"})
     res.delete_cookie("auth_token")
