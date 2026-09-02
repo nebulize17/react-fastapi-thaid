@@ -72,7 +72,14 @@ export default function Logout() {
   }, [])
 
   const handleReturnToLogin = () => {
-    window.location.href = '/'
+    const params = new URLSearchParams(window.location.search)
+    const magic = params.get('magic') || ''
+    const fwIp = (params.get('fw_ip') || 'auth-thaid.dtam.moph.go.th').split(':')[0]
+    if (magic) {
+      window.location.href = `https://${fwIp}:1442/logout?${encodeURIComponent(magic)}`
+    } else {
+      window.location.href = `https://${fwIp}:1442/logout`
+    }
   }
 
   return (

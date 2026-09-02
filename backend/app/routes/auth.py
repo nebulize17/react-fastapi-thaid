@@ -118,8 +118,9 @@ def generate_pattern_password(pid: str) -> str:
 async def sync_cppm_user(username: str, password: str, user_info: dict = None) -> bool:
     """
     สร้างหรืออัปเดตบัญชีใน Aruba ClearPass Guest DB จากข้อมูล ThaiD:
-    - ถ้าไม่มีใน ClearPass: สร้างบัญชีใหม่พร้อมชื่อ-นามสกุล และรหัสผ่าน
-    - ถ้ามีอยู่แล้ว: อัปเดตรหัสผ่าน, ชื่อ-นามสกุล, และเปิดสถานะ (enabled=True) ทันที
+    - ค้นหาผ่าน /api/guest/username/{username} โดยตรง (ClearPass REST API Standard)
+    - ถ้าพบ: PATCH อัปเดตรหัสผ่าน, ชื่อ-นามสกุล, เปิดใช้งาน (enabled=True), และรีเซ็ตเวลาใช้งาน
+    - ถ้าไม่พบ: POST สร้างบัญชีใหม่
     """
     if not CPPM_HOST or not CPPM_CLIENT_ID:
         logger.warning("ClearPass configuration missing. Skipping user sync.")
@@ -132,19 +133,12 @@ async def sync_cppm_user(username: str, password: str, user_info: dict = None) -
     title_th = (user_info.get("title") or "").strip()
     
     if thai_name:
-        if title_th and not thai_name.startswith(title_th):
-            full_thai_name = f"{title_th} {thai_name}"
-        else:
-            full_thai_name = thai_name
+        full_thai_name = f"{title_th} {thai_name}".strip() if title_th and not thai_name.startswith(title_th) else thai_name
     else:
         full_thai_name = english_name or f"ThaiD User {username}"
     
     visitor_name = full_thai_name
-    
-    # Mask PID for security (e.g. 1101500387514 -> 110XXXXXX7514)
     masked_pid = pid[:3] + "X" * (len(pid) - 6) + pid[-3:] if len(pid) >= 8 else ("X" * len(pid) if pid else "N/A")
-    
-    # Store full names and metadata in ClearPass notes and visitor_name fields
     notes = f"ThaiD Authentication | PID: {masked_pid} | Name (TH): {full_thai_name} | Name (EN): {english_name} | Synced: {datetime.now(timezone.utc).isoformat()}"
 
     try:
@@ -166,40 +160,10 @@ async def sync_cppm_user(username: str, password: str, user_info: dict = None) -
                 "Content-Type": "application/json"
             }
 
-            # 1. ค้นหาผู้ใช้ใน ClearPass Guest DB
-            search_url = f"https://{CPPM_HOST}/api/guest"
-            filter_params = {"filter": json.dumps({"username": username})}
-            search_res = await client.get(search_url, params=filter_params, headers=headers, timeout=10)
+            # 1. ตรวจสอบผู้ใช้ผ่าน endpoint ตรง /api/guest/username/{username}
+            user_url = f"https://{CPPM_HOST}/api/guest/username/{username}"
+            user_res = await client.get(user_url, headers=headers, timeout=10)
 
-            existing_user_id = None
-            if search_res.status_code == 200:
-                try:
-                    data = search_res.json()
-                    items = data.get("_embedded", {}).get("items", [])
-                    if items:
-                        existing_user_id = items[0].get("id")
-                except Exception:
-                    pass
-
-            # 2. ถ้าพบผู้ใช้เดิม -> PATCH อัปเดตรหัสผ่าน, ชื่อ-นามสกุล, และเปิดใช้งาน (enabled=True)
-            if existing_user_id:
-                patch_url = f"https://{CPPM_HOST}/api/guest/{existing_user_id}"
-                patch_payload = {
-                    "enabled": True,
-                    "password": password,
-                    "visitor_name": visitor_name,
-                    "notes": notes,
-                    "expire_after": 480,
-                    "role_id": 2
-                }
-                patch_res = await client.patch(patch_url, json=patch_payload, headers=headers, timeout=10)
-                if patch_res.status_code in [200, 204]:
-                    logger.info(f"Successfully updated ClearPass user '{username}' (ID: {existing_user_id}, Name: {visitor_name})")
-                    return True
-                else:
-                    logger.error(f"Failed to patch ClearPass user '{username}': {patch_res.text}")
-
-            # 3. ถ้าไม่มีผู้ใช้เดิม -> POST สร้างบัญชีใหม่
             user_payload = {
                 "enabled": True,
                 "username": username,
@@ -209,23 +173,31 @@ async def sync_cppm_user(username: str, password: str, user_info: dict = None) -
                 "expire_after": 480,
                 "role_id": 2
             }
-            create_res = await client.post(search_url, json=user_payload, headers=headers, timeout=10)
-            if create_res.status_code in [200, 201]:
-                logger.info(f"Successfully created new ClearPass user '{username}' (Name: {visitor_name})")
-                return True
-            elif create_res.status_code == 409:
-                # กรณีชน Conflict (มีอยู่แล้ว) ให้ค้นหา ID และ PATCH อีกครั้ง
-                logger.info(f"ClearPass user '{username}' returned 409 Conflict. Retrying PATCH.")
-                retry_res = await client.get(search_url, params=filter_params, headers=headers, timeout=10)
-                if retry_res.status_code == 200:
-                    items = retry_res.json().get("_embedded", {}).get("items", [])
-                    if items:
-                        uid = items[0].get("id")
-                        await client.patch(f"https://{CPPM_HOST}/api/guest/{uid}", json=user_payload, headers=headers, timeout=10)
-                        logger.info(f"Successfully patched ClearPass user '{username}' on retry.")
-                        return True
-                return True
+
+            if user_res.status_code == 200:
+                user_data = user_res.json()
+                user_id = user_data.get("id")
+                patch_url = f"https://{CPPM_HOST}/api/guest/{user_id}" if user_id else user_url
+                patch_res = await client.patch(patch_url, json=user_payload, headers=headers, timeout=10)
+                if patch_res.status_code in [200, 204]:
+                    logger.info(f"Successfully updated ClearPass user '{username}' (ID: {user_id}, Name: {visitor_name}) with new password & enabled=True")
+                    return True
+                else:
+                    logger.error(f"Failed to patch ClearPass user '{username}': {patch_res.text}")
+                    return False
             else:
+                # 2. ถ้ายังไม่มี ให้สร้างใหม่
+                create_url = f"https://{CPPM_HOST}/api/guest"
+                create_res = await client.post(create_url, json=user_payload, headers=headers, timeout=10)
+                if create_res.status_code in [200, 201]:
+                    logger.info(f"Successfully created new ClearPass user '{username}' (Name: {visitor_name})")
+                    return True
+                elif create_res.status_code == 409:
+                    # กรณีชน 409 Conflict ให้ PATCH ไปที่ username ตรงๆ
+                    patch_res = await client.patch(user_url, json=user_payload, headers=headers, timeout=10)
+                    if patch_res.status_code in [200, 204]:
+                        logger.info(f"Successfully patched ClearPass user '{username}' on 409 retry.")
+                        return True
                 logger.error(f"Failed to create ClearPass user '{username}': {create_res.text}")
                 return False
 
@@ -641,10 +613,14 @@ async def auth_callback(request: Request, response: Response):
     logger.info(f"ThaiD Callback success! PID: {pid}")
 
     # Calculate custom username based on: English First Name + First 2 chars of English Last Name (lowercase)
-    given = user_info.get("given_name_en", "")
-    family = user_info.get("family_name_en", "")
-    if given and family:
-        username = (given.strip() + family.strip()[:2]).lower()
+    import re
+    given = (user_info.get("given_name_en") or "").strip()
+    family = (user_info.get("family_name_en") or "").strip()
+    clean_given = re.sub(r'[^a-zA-Z0-9]', '', given)
+    clean_family = re.sub(r'[^a-zA-Z0-9]', '', family)
+
+    if clean_given:
+        username = (clean_given + clean_family[:2]).lower()
         logger.info(f"Calculated username '{username}' from English name: '{given} {family}'")
     else:
         username = pid

@@ -570,8 +570,25 @@ export default function QRPortal({ keepaliveOnly }) {
               className="logout-btn"
               onClick={() => {
                 const magic = captiveParams.magic || '';
-                const fwIp = captiveParams.fw_ip || '';
-                window.location.href = `/logout?magic=${encodeURIComponent(magic)}&fw_ip=${encodeURIComponent(fwIp)}`;
+                const fwHost = (captiveParams.fw_ip || 'auth-thaid.dtam.moph.go.th').split(':')[0];
+                
+                // ล้างข้อมูลเซสชันในเครื่องทันที
+                try {
+                  localStorage.removeItem('thaid_success_data');
+                  localStorage.removeItem('captive_params');
+                } catch(e) {}
+
+                // ยิงแจ้ง Backend ในเบื้องหลัง
+                try {
+                  fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+                } catch(e) {}
+
+                // นำทางตรงไปยัง FortiGate Logout เพื่อปิด Firewall Session และให้ FortiGate สร้าง Magic Token ใหม่พากลับหน้า Login
+                if (magic) {
+                  window.location.href = `https://${fwHost}:1442/logout?${encodeURIComponent(magic)}`;
+                } else {
+                  window.location.href = `https://${fwHost}:1442/logout`;
+                }
               }}
             >
               <IconLogOut />
