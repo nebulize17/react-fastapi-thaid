@@ -838,58 +838,29 @@ async def auth_callback(request: Request, response: Response):
         console.error('Error in callback script:', err);
       }}
 
-      // 3. แยกการยิงคำขอยืนยันตัวตนไปยัง FortiGate ระหว่าง iOS กับ Android/PC
-      const isIos = {json.dumps(is_ios)};
+      // 3. ทำ Direct Form Submit ไปยัง FortiGate พร้อมพารามิเตอร์ 4Tredir (รองรับทั้ง iOS, Android และ PC)
       const magicVal = {json.dumps(magic)};
-      const authUrl = {json.dumps(auth_action_url)};
-      const uVal = {json.dumps(username)};
-      const pVal = {json.dumps(password)};
-
-      if (isIos) {{
-        // สำหรับ iOS / iPhone: WebKit ป้องกันการ submit ข้ามพอร์ต/โดเมนเข้า hidden iframe
-        // ทำการ Submit ตรงในหน้าต่างหลัก (Direct Top-Level POST) ไปยัง FortiGate ทันที
-        // เพื่อให้ FortiGate สร้าง Session และ Apple CNA ปลดล็อกการใช้งานอินเทอร์เน็ตได้ 100%
-        const form = document.getElementById('auth_form');
-        if (form) {{
-          form.removeAttribute('target');
-          form.submit();
-        }}
+      if (magicVal) {{
+        setTimeout(function() {{
+          const form = document.getElementById('auth_form');
+          if (form) form.submit();
+        }}, 500);
       }} else {{
-        // สำหรับ Android และ PC (คงการทำงานเดิมไว้ 100%):
-        if (magicVal && authUrl) {{
-          try {{
-            const postBody = new URLSearchParams();
-            postBody.append('magic', magicVal);
-            postBody.append('username', uVal);
-            postBody.append('password', pVal);
-            fetch(authUrl, {{
-              method: 'POST',
-              body: postBody,
-              mode: 'no-cors'
-            }}).catch(function(e) {{}});
-          }} catch(err) {{}}
-
-          try {{
-            const form = document.getElementById('auth_form');
-            if (form) form.submit();
-          }} catch(e) {{}}
-        }}
-
+        // ถ้าไม่มีค่า magic token (เปิดเว็บมาทดสอบตรงๆ) ให้นำทางไป /keepalive
         setTimeout(function() {{
           window.location.href = '/keepalive';
-        }}, 1800);
+        }}, 800);
       }}
     }};
   </script>
 </head>
 <body>
-  <!-- Iframe สำหรับรับการตอบกลับจาก FortiGate สำหรับ Android/PC -->
-  <iframe id="auth_iframe" name="auth_iframe" style="display: none;"></iframe>
-
-  <form id="auth_form" method="POST" action="{auth_action_url}" target="auth_iframe" style="display: none;">
+  <!-- ทำ Form Submit ตรงไปยัง FortiGate พร้อมกำหนด 4Tredir เพื่อให้ Firewall เป็นตัว Redirect กลับมาที่ /keepalive -->
+  <form id="auth_form" method="POST" action="{auth_action_url}">
     <input type="hidden" name="magic" value="{magic}" />
     <input type="hidden" name="username" value="{username}" />
     <input type="hidden" name="password" value="{password}" />
+    <input type="hidden" name="4Tredir" value="https://api-gateway.dtam.moph.go.th/keepalive" />
     <input type="hidden" name="4TImroot" value="{magic}" />
     <input type="hidden" name="ft_un" value="{username}" />
     <input type="hidden" name="ft_pd" value="{password}" />
