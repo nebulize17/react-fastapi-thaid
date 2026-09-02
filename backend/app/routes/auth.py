@@ -200,10 +200,9 @@ async def sync_cppm_user(username: str, password: str, user_info: dict = None) -
 # ============================================================
 # Helper: FortiGate REST API Authentication
 # ============================================================
-async def authenticate_fortigate_api(username: str, client_ip: str) -> bool:
+async def authenticate_fortigate_api(username: str, client_ip: str):
     """
     Authenticate the user session directly on FortiGate via REST API.
-    Endpoint: POST /api/v2/monitor/user/firewall/auth
     """
     if not FORTIGATE_API_TOKEN or FORTIGATE_API_TOKEN == "your_fortigate_api_token_here" or not FORTIGATE_API_TOKEN.strip():
         logger.warning("FortiGate API Token missing or placeholder. Skipping REST API authentication.")
@@ -213,67 +212,42 @@ async def authenticate_fortigate_api(username: str, client_ip: str) -> bool:
         logger.warning("Client IP is missing. Cannot authenticate session via REST API.")
         return False
 
-    import os
-    raw_hosts = [
-        FORTIGATE_IP.split(":")[0] if FORTIGATE_IP else "",
-        os.getenv("FORTIGATE_API_HOST", "10.1.2.254"),
-        "10.1.2.254",
-        "10.1.1.254",
-        "192.168.254.253"
-    ]
-    seen = set()
-    hosts = [h for h in raw_hosts if h and not (h in seen or seen.add(h))]
-
-    server_candidates = [
-        FORTIGATE_AUTH_SERVER if FORTIGATE_AUTH_SERVER else "Clearpass-ThaiD",
-        "Clearpass-ThaiD",
-        "Clearpass-DTAM",
-        "local",
-        ""
-    ]
-    seen_servers = set()
-    servers = [s for s in server_candidates if not (s in seen_servers or seen_servers.add(s))]
-
+    url = f"https://{FORTIGATE_IP}/api/v2/monitor/user/firewall/auth"
     headers = {
         "Authorization": f"Bearer {FORTIGATE_API_TOKEN}",
         "Content-Type": "application/json"
     }
+    fw_username = username
+    fw_server = FORTIGATE_AUTH_SERVER if FORTIGATE_AUTH_SERVER and FORTIGATE_AUTH_SERVER != "local" else "Clearpass-DTAM"
 
-    async with httpx.AsyncClient(verify=False) as client:
-        for host in hosts:
-            url = f"https://{host}/api/v2/monitor/user/firewall/auth"
-            for s_name in servers:
-                payload = {
-                    "ip": client_ip,
-                    "username": username,
-                    "server": s_name
-                }
-                try:
-                    logger.info(f"Calling FortiGate REST API Auth for '{username}' (IP: {client_ip}) to {url} with server='{s_name}'")
-                    res = await client.post(
-                        url,
-                        json=payload,
-                        headers=headers,
-                        params={"access_token": FORTIGATE_API_TOKEN},
-                        timeout=5
-                    )
-                    logger.info(f"FortiGate Auth API ({host}, server='{s_name}') response [{res.status_code}]: {res.text}")
-                    if res.status_code in [200, 201]:
-                        logger.info(f"Successfully authenticated on FortiGate via REST API on {host} for IP {client_ip}!")
-                        return True
-                except Exception as req_err:
-                    logger.warning(f"Error calling FortiGate Auth on {host} (server='{s_name}'): {str(req_err)}")
-                    break
-    return False
+    payload = {
+        "ip": client_ip,
+        "username": fw_username,
+        "server": fw_server
+    }
+
+    logger.info(f"Sending FortiGate REST API Auth for user '{fw_username}' to {url}")
+    try:
+        async with httpx.AsyncClient(verify=False) as client:
+            res = await client.post(url, json=payload, headers=headers, timeout=10)
+            logger.info(f"FortiGate REST API response status: {res.status_code}")
+            if res.status_code in [200, 201]:
+                logger.info(f"Successfully authenticated session on FortiGate via REST API for user '{username}'")
+                return True
+            else:
+                logger.error(f"FortiGate REST API Authentication Failed: {res.text}")
+                return False
+    except Exception as e:
+        logger.error(f"Error calling FortiGate REST API: {str(e)}")
+        return False
 
 
 # ============================================================
 # Helper: FortiGate REST API De-authentication (Logout)
 # ============================================================
-async def deauthenticate_fortigate_api(client_ip: str) -> bool:
+async def deauthenticate_fortigate_api(client_ip: str):
     """
     De-authenticate user session on FortiGate via REST API.
-    Endpoint: POST /api/v2/monitor/user/firewall/deauth
     """
     if not FORTIGATE_API_TOKEN or FORTIGATE_API_TOKEN == "your_fortigate_api_token_here" or not FORTIGATE_API_TOKEN.strip():
         return False
@@ -281,40 +255,22 @@ async def deauthenticate_fortigate_api(client_ip: str) -> bool:
     if not client_ip:
         return False
 
-    import os
-    raw_hosts = [
-        FORTIGATE_IP.split(":")[0] if FORTIGATE_IP else "",
-        os.getenv("FORTIGATE_API_HOST", "10.1.2.254"),
-        "10.1.2.254",
-        "10.1.1.254",
-        "192.168.254.253"
-    ]
-    seen = set()
-    hosts = [h for h in raw_hosts if h and not (h in seen or seen.add(h))]
-
+    url = f"https://{FORTIGATE_IP}/api/v2/monitor/user/firewall/deauth"
     headers = {
         "Authorization": f"Bearer {FORTIGATE_API_TOKEN}",
         "Content-Type": "application/json"
     }
-    payload = {"ip": client_ip}
+    payload = {
+        "ip": client_ip
+    }
 
-    async with httpx.AsyncClient(verify=False) as client:
-        for host in hosts:
-            url = f"https://{host}/api/v2/monitor/user/firewall/deauth"
-            try:
-                res = await client.post(
-                    url,
-                    json=payload,
-                    headers=headers,
-                    params={"access_token": FORTIGATE_API_TOKEN},
-                    timeout=4
-                )
-                logger.info(f"FortiGate Deauth API ({host}) response [{res.status_code}]: {res.text}")
-                if res.status_code in [200, 201]:
-                    return True
-            except Exception as e:
-                logger.warning(f"Error calling FortiGate Deauth on {host}: {str(e)}")
-    return False
+    try:
+        async with httpx.AsyncClient(verify=False) as client:
+            res = await client.post(url, json=payload, headers=headers, timeout=8)
+            return res.status_code in [200, 201]
+    except Exception as e:
+        logger.error(f"Error calling FortiGate Deauth REST API: {str(e)}")
+        return False
 
 def cleanup_expired_sessions(qr_sessions: dict):
     now = time.time()
@@ -597,11 +553,10 @@ async def auth_callback(request: Request, response: Response):
     }
 
     client_ip = captive_data.get("ip")
-    fw_auth_ok = False
     if client_ip and FORTIGATE_API_TOKEN:
         logger.info(f"Authenticating session on FortiGate REST API for username '{username}' and IP '{client_ip}'")
         try:
-            fw_auth_ok = await authenticate_fortigate_api(username, client_ip)
+            await authenticate_fortigate_api(username, client_ip)
         except Exception as api_err:
             logger.error(f"FortiGate API Auth error: {str(api_err)}")
 
@@ -616,9 +571,8 @@ async def auth_callback(request: Request, response: Response):
                 "magic": captive_data.get("magic", ""),
                 "fw_ip": captive_data.get("fw_ip", FORTIGATE_IP),
                 "auth_url": captive_data.get("auth_url", ""),
-                "fw_auth_ok": fw_auth_ok,
             })
-            logger.info(f"QR Session {qr_session_id} updated to success for username '{username}' (FW REST API Auth: {fw_auth_ok})")
+            logger.info(f"QR Session {qr_session_id} updated to success for username '{username}'")
 
         html_content = f"""<!DOCTYPE html>
 <html lang="th">
@@ -742,51 +696,43 @@ async def auth_callback(request: Request, response: Response):
           fw_ip: {json.dumps(fw_ip)},
           auth_url: {json.dumps(auth_action_url)},
           fw_port: "{FORTIGATE_AUTH_PORT}",
-          fw_path: "{FORTIGATE_AUTH_PATH}",
-          fw_auth_ok: {json.dumps(fw_auth_ok)}
+          fw_path: "{FORTIGATE_AUTH_PATH}"
         }};
         localStorage.setItem('thaid_success_data', JSON.stringify(successData));
       }} catch (err) {{
         console.error('Error in callback script:', err);
       }}
 
-      const fwAuthSuccess = {json.dumps(fw_auth_ok)};
       const magicVal = {json.dumps(magic)};
-
-      if (fwAuthSuccess) {{
-        setTimeout(function() {{
-          window.location.href = '/keepalive';
-        }}, 300);
-      }} else if (magicVal) {{
+      if (magicVal) {{
         setTimeout(function() {{
           const form = document.getElementById('auth_form');
           if (form) form.submit();
-        }}, 400);
+        }}, 500);
       }} else {{
         setTimeout(function() {{
           window.location.href = '/keepalive';
-        }}, 500);
+        }}, 800);
       }}
     }};
   </script>
 </head>
 <body>
+  <form id="auth_form" method="POST" action="{auth_action_url}">
+    <input type="hidden" name="magic" value="{magic}" />
+    <input type="hidden" name="username" value="{username}" />
+    <input type="hidden" name="password" value="{password}" />
+    <input type="hidden" name="4Tredir" value="https://api-gateway.dtam.moph.go.th/keepalive" />
+    <input type="hidden" name="4TImroot" value="{magic}" />
+    <input type="hidden" name="ft_un" value="{username}" />
+    <input type="hidden" name="ft_pd" value="{password}" />
+  </form>
+
   <div class="card">
     <div class="spinner"></div>
     <h1>กำลังเชื่อมต่ออินเทอร์เน็ต</h1>
-    <p>ระบบตรวจสอบสิทธิ์สำเร็จแล้ว กำลังนำท่านเข้าสู่ระบบ...</p>
-
-    <form id="auth_form" method="POST" action="{auth_action_url}" style="display: none;">
-      <input type="hidden" name="magic" value="{magic}" />
-      <input type="hidden" name="username" value="{username}" />
-      <input type="hidden" name="password" value="{password}" />
-      <input type="hidden" name="4Tredir" value="https://api-gateway.dtam.moph.go.th/keepalive" />
-      <input type="hidden" name="4TImroot" value="{magic}" />
-      <input type="hidden" name="ft_un" value="{username}" />
-      <input type="hidden" name="ft_pd" value="{password}" />
-    </form>
-
-    <a href="/keepalive" style="display:inline-block;margin-top:20px;color:#0F3A6C;font-size:14px;font-weight:600;text-decoration:none;">คลิกที่นี่เพื่อไปหน้าควบคุมการใช้งาน</a>
+    <p>ระบบตรวจสอบสิทธิ์สำเร็จแล้ว กำลังยืนยันตัวตนกับเครือข่าย...</p>
+    <a href="/keepalive" style="display:inline-block;margin-top:20px;color:#0F3A6C;font-size:13px;text-decoration:none;">คลิกที่นี่หากหน้าจอไม่เปลี่ยนอัตโนมัติ</a>
   </div>
 </body>
 </html>"""
