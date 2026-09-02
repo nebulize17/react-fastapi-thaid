@@ -639,6 +639,13 @@ async def auth_callback(request: Request, response: Response):
 </head>
 <body>
   <div class="card">
+    <div style="display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 18px;">
+      <img src="/dtam.png" alt="DTAM Logo" style="height: 44px; width: 44px; object-fit: contain;" />
+      <div style="text-align: left;">
+        <div style="font-size: 13.5px; font-weight: 700; color: #0F3A6C; line-height: 1.25;">กรมการแพทย์แผนไทยและการแพทย์ทางเลือก</div>
+        <div style="font-size: 10px; color: #64748b; line-height: 1.2;">Department of Thai Traditional and Alternative Medicine</div>
+      </div>
+    </div>
     <div class="icon">
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
         <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" stroke="#16a34a"/>
@@ -812,6 +819,13 @@ async def auth_callback(request: Request, response: Response):
   <iframe id="auth_iframe" name="auth_iframe" style="display: none;"></iframe>
 
   <div class="card">
+    <div style="display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 18px;">
+      <img src="/dtam.png" alt="DTAM Logo" style="height: 44px; width: 44px; object-fit: contain;" />
+      <div style="text-align: left;">
+        <div style="font-size: 13.5px; font-weight: 700; color: #0F3A6C; line-height: 1.25;">กรมการแพทย์แผนไทยและการแพทย์ทางเลือก</div>
+        <div style="font-size: 10px; color: #64748b; line-height: 1.2;">Department of Thai Traditional and Alternative Medicine</div>
+      </div>
+    </div>
     <div class="icon">
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
         <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" stroke="#16a34a"/>

@@ -16,8 +16,8 @@ export default function Login() {
         <div className="portal-header">
           <img src="/dtam.png" alt="DTAM" className="header-logo" />
           <div className="header-text">
-            <h1 className="header-title">ระบบบริการการแพทย์ทางไกล</h1>
-            <p className="header-sub">Telemedicine Service</p>
+            <h1 className="header-title">กรมการแพทย์แผนไทยและการแพทย์ทางเลือก</h1>
+            <p className="header-sub">Department of Thai Traditional and Alternative Medicine</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center' }}>
              <img src="/thaid.jpg" alt="ThaiD Logo" className="header-logo" style={{ borderRadius: '50%', height: '48px', width: '48px' }} />

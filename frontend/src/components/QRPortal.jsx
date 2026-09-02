@@ -510,8 +510,8 @@ export default function QRPortal({ keepaliveOnly }) {
           <div className="portal-header keepalive-header">
             <img src="/dtam.png" alt="DTAM" className="header-logo" />
             <div className="header-text">
-              <h1 className="header-title">ระบบลงทะเบียนเข้าใช้งานอินเทอร์เน็ต</h1>
-              <p className="header-sub">DTAM Internet Session Dashboard</p>
+              <h1 className="header-title">กรมการแพทย์แผนไทยและการแพทย์ทางเลือก</h1>
+              <p className="header-sub">Department of Thai Traditional and Alternative Medicine</p>
             </div>
           </div>
 
@@ -600,8 +600,8 @@ export default function QRPortal({ keepaliveOnly }) {
           <div className="portal-header">
             <img src="/dtam.png" alt="DTAM" className="header-logo" />
             <div className="header-text">
-              <h1 className="header-title">ระบบตรวจสอบสิทธิ์เครือข่าย</h1>
-              <p className="header-sub">DTAM Telemedicine Network Access</p>
+              <h1 className="header-title">กรมการแพทย์แผนไทยและการแพทย์ทางเลือก</h1>
+              <p className="header-sub">Department of Thai Traditional and Alternative Medicine</p>
             </div>
           </div>
 
