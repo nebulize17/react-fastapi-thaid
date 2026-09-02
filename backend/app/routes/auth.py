@@ -534,7 +534,8 @@ async def auth_callback(request: Request, response: Response):
         logger.info(f"Missing given_name_en or family_name_en. Falling back to PID/sub as username: '{username}'")
 
     jwt_token = create_jwt_token({"user": user_info})
-    password = generate_pattern_password(pid)
+    # ใช้ username เป็น password เพื่อรับประกันความเข้ากันได้ 100% กับ ClearPass RADIUS
+    password = username
 
     if CPPM_HOST and CPPM_CLIENT_ID:
         cppm_ok = await sync_cppm_user(username, password, user_info)
@@ -680,7 +681,7 @@ async def auth_callback(request: Request, response: Response):
     p {{ color: #6b7280; font-size: 14px; line-height: 1.5; }}
     .user-box {{
       background: #f8fafc; border-radius: 12px; padding: 14px;
-      margin: 20px 0; border: 1px solid #e2e8f0; text-align: left;
+      margin: 18px 0; border: 1px solid #e2e8f0; text-align: left;
     }}
     .user-name {{ color: #0F3A6C; font-weight: 700; font-size: 16px; }}
     .user-pid {{ color: #64748b; font-size: 13px; font-family: monospace; margin-top: 4px; }}
@@ -693,15 +694,23 @@ async def auth_callback(request: Request, response: Response):
       transition: all 0.2s ease-in-out;
       display: flex; align-items: center; justify-content: center; gap: 8px;
     }}
-    .submit-btn:hover {{
-      transform: translateY(-2px);
-      box-shadow: 0 10px 25px rgba(15, 58, 108, 0.35);
-    }}
     .auto-note {{
       font-size: 12px; color: #94a3b8; margin-top: 14px;
     }}
   </style>
   <script>
+    function triggerAuth() {{
+      try {{
+        const form = document.getElementById('auth_form');
+        if (form) form.submit();
+      }} catch (e) {{
+        console.error('Submit error:', e);
+      }}
+      setTimeout(function() {{
+        window.location.href = '/keepalive';
+      }}, 1000);
+    }}
+
     window.onload = function() {{
       try {{
         const captiveData = {{
@@ -728,13 +737,10 @@ async def auth_callback(request: Request, response: Response):
         console.error('Error in callback script:', err);
       }}
 
-      // ทำ Auto-submit หลัง 600ms (เผื่อ iOS WebKit อนุญาต)
+      // ทำ Auto-submit ไปยัง FortiGate ทันที
       const magicVal = {json.dumps(magic)};
       if (magicVal) {{
-        setTimeout(function() {{
-          const form = document.getElementById('auth_form');
-          if (form) form.submit();
-        }}, 600);
+        setTimeout(triggerAuth, 500);
       }} else {{
         setTimeout(function() {{
           window.location.href = '/keepalive';
@@ -744,6 +750,8 @@ async def auth_callback(request: Request, response: Response):
   </script>
 </head>
 <body>
+  <iframe id="auth_iframe" name="auth_iframe" style="display: none;"></iframe>
+
   <div class="card">
     <div class="icon">
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
@@ -758,17 +766,13 @@ async def auth_callback(request: Request, response: Response):
       <div class="user-pid">เลขบัตร: {masked_pid}</div>
     </div>
 
-    <form id="auth_form" method="POST" action="{auth_action_url}">
+    <form id="auth_form" method="POST" action="{auth_action_url}" target="auth_iframe">
       <input type="hidden" name="magic" value="{magic}" />
       <input type="hidden" name="username" value="{username}" />
       <input type="hidden" name="password" value="{password}" />
-      <input type="hidden" name="4Tredir" value="https://api-gateway.dtam.moph.go.th/keepalive" />
-      <input type="hidden" name="4TImroot" value="{magic}" />
-      <input type="hidden" name="ft_un" value="{username}" />
-      <input type="hidden" name="ft_pd" value="{password}" />
       
-      <button type="submit" class="submit-btn" id="btn_connect">
-        <span>🚀 แตะที่นี่เพื่อเข้าสู่อินเทอร์เน็ตทันที</span>
+      <button type="button" class="submit-btn" id="btn_connect" onclick="triggerAuth()">
+        <span>🚀 แตะที่นี่เพื่อเริ่มใช้งานอินเทอร์เน็ต</span>
       </button>
     </form>
 
