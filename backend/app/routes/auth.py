@@ -207,34 +207,6 @@ async def sync_cppm_user(username: str, password: str, user_info: dict = None) -
 
 
 # ============================================================
-# Helper: FortiGate REST API Authentication
-# ============================================================
-async def authenticate_fortigate_api(username: str, client_ip: str) -> bool:
-    """
-    Authenticate the user session directly on FortiGate via REST API.
-    Endpoint: POST /api/v2/monitor/user/firewall/auth
-    """
-    if not FORTIGATE_API_TOKEN or FORTIGATE_API_TOKEN == "your_fortigate_api_token_here" or not FORTIGATE_API_TOKEN.strip():
-        logger.warning("FortiGate API Token missing or placeholder. Skipping REST API authentication.")
-        return False
-
-    if not client_ip:
-        logger.warning("Client IP is missing. Cannot authenticate session via REST API.")
-        return False
-
-    api_hosts = [
-        os.getenv("FORTIGATE_API_HOST", "10.1.2.254"),
-        "10.1.2.254",
-        "10.1.1.254",
-        "192.168.254.253"
-    ]
-    seen = set()
-    hosts = [h for h in api_hosts if h and not (h in seen or seen.add(h))]
-
-    fw_username = username
-    server_names = [FORTIGATE_AUTH_SERVER or "Clearpass-ThaiD", "Clearpass-DTAM", ""]
-
-# ============================================================
 # Helper: Extract Client Real IP
 # ============================================================
 def extract_client_ip(request: Request, ip_param: str = None) -> str:
@@ -422,17 +394,8 @@ async def create_qr_session(
     elif fw_ip:
         effective_fw_ip = fw_ip.split(":")[0]
 
-    # Extract client real IP (ignore if it is a hostname like 'auth.dtam.moph.go.th')
-    client_ip = ""
-    if ip and not any(c.isalpha() for c in ip):
-        client_ip = ip
-
-    if not client_ip:
-        x_forwarded_for = request.headers.get("x-forwarded-for")
-        if x_forwarded_for:
-            client_ip = x_forwarded_for.split(",")[0].strip()
-        else:
-            client_ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
+    # Extract client real IP using helper
+    client_ip = extract_client_ip(request, ip)
 
     qr_sessions[session_id] = {
         "status": "pending",
@@ -547,17 +510,8 @@ async def login(
     elif fw_ip and "api-gateway" not in fw_ip:
         effective_fw_host = fw_ip.split(":")[0]
 
-    # Extract client real IP (ignore if it is a hostname like 'auth.dtam.moph.go.th')
-    real_ip = ""
-    if ip and not any(c.isalpha() for c in ip):
-        real_ip = ip
-
-    if not real_ip:
-        x_forwarded_for = request.headers.get("x-forwarded-for")
-        if x_forwarded_for:
-            real_ip = x_forwarded_for.split(",")[0].strip()
-        else:
-            real_ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
+    # Extract client real IP using helper
+    real_ip = extract_client_ip(request, ip)
 
     # บันทึก session ลงใน In-Memory qr_sessions store ผูกกับ state UUID
     # ป้องกัน Session Cookie หายเมื่อ iOS สลับจาก CNA (Captive Network Assistant) -> ThaiD App -> Safari
