@@ -578,17 +578,20 @@ export default function QRPortal({ keepaliveOnly }) {
                   localStorage.removeItem('captive_params');
                 } catch(e) {}
 
-                // ยิงแจ้ง Backend ในเบื้องหลัง
+                // ยิงแจ้ง Backend เพื่อ De-auth session บน FortiGate
                 try {
                   fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
                 } catch(e) {}
 
-                // นำทางตรงไปยัง FortiGate Logout เพื่อปิด Firewall Session และให้ FortiGate สร้าง Magic Token ใหม่พากลับหน้า Login
-                if (magic) {
-                  window.location.href = `https://${fwHost}:1442/logout?${encodeURIComponent(magic)}`;
-                } else {
-                  window.location.href = `https://${fwHost}:1442/logout`;
-                }
+                // ส่งคำสั่ง de-auth ไปที่ FortiGate ในเบื้องหลัง
+                try {
+                  if (magic && navigator.sendBeacon) {
+                    navigator.sendBeacon(`https://${fwHost}:1442/logout?${magic}`);
+                  }
+                } catch(e) {}
+
+                // นำทางไปหน้า Logout ของ DTAM อย่างสวยงาม
+                window.location.href = '/logout';
               }}
             >
               <IconLogOut />

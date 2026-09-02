@@ -817,15 +817,14 @@ async def auth_callback(request: Request, response: Response):
         console.error('Error in callback script:', err);
       }}
 
-      // 3. ทำ Direct Form Submit ไปยัง FortiGate พร้อมพารามิเตอร์ 4Tredir (รองรับทั้ง iOS, Android และ PC)
-      const magicVal = {json.dumps(magic)};
-      if (magicVal) {{
+      // 3. ทำ Direct Form Submit ไปยัง FortiGate พร้อมพารามิเตอร์ 4Tredir (รองรับทั้ง Login ครั้งแรก และ Re-login หลัง Logout)
+      const authUrl = {json.dumps(auth_action_url)};
+      if (authUrl) {{
         setTimeout(function() {{
           const form = document.getElementById('auth_form');
           if (form) form.submit();
         }}, 500);
       }} else {{
-        // ถ้าไม่มีค่า magic token (เปิดเว็บมาทดสอบตรงๆ) ให้นำทางไป /keepalive
         setTimeout(function() {{
           window.location.href = '/keepalive';
         }}, 800);
