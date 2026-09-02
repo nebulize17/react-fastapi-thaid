@@ -640,12 +640,15 @@ async def auth_callback(request: Request, response: Response):
     pid = user_info.get('pid') or user_info.get('sub', '')
     logger.info(f"ThaiD Callback success! PID: {pid}")
 
-    # กำหนด Username ให้เป็นเลขบัตรประชาชน (PID) สำหรับบันทึกในระบบ Firewall & ClearPass
-    username = pid
-    logger.info(f"Using PID as username for Firewall & ClearPass: '{username}'")
-
-
-
+    # Calculate custom username based on: English First Name + First 2 chars of English Last Name (lowercase)
+    given = user_info.get("given_name_en", "")
+    family = user_info.get("family_name_en", "")
+    if given and family:
+        username = (given.strip() + family.strip()[:2]).lower()
+        logger.info(f"Calculated username '{username}' from English name: '{given} {family}'")
+    else:
+        username = pid
+        logger.info(f"Missing given_name_en or family_name_en. Falling back to PID/sub as username: '{username}'")
 
     # สร้าง JWT session token
     jwt_token = create_jwt_token({"user": user_info})
