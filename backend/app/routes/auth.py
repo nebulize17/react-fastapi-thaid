@@ -189,7 +189,22 @@ async def authenticate_fortigate_api(username: str, client_ip: str):
         logger.warning("Client IP is missing. Cannot authenticate session via REST API.")
         return False
 
+<<<<<<< HEAD
     url = f"https://{FORTIGATE_IP}/api/v2/monitor/user/firewall/auth"
+=======
+    api_hosts = [
+        os.getenv("FORTIGATE_API_HOST", "10.1.2.254"),
+        "10.1.2.254",
+        "10.1.1.254",
+        "192.168.254.253"
+    ]
+    seen = set()
+    hosts = [h for h in api_hosts if h and not (h in seen or seen.add(h))]
+
+    fw_username = username
+    server_names = [FORTIGATE_AUTH_SERVER or "Clearpass-ThaiD", "Clearpass-DTAM", ""]
+
+>>>>>>> parent of 1e4fd18 (Update auth.py)
     headers = {
         "Authorization": f"Bearer {FORTIGATE_API_TOKEN}",
         "Content-Type": "application/json"
@@ -219,12 +234,25 @@ async def authenticate_fortigate_api(username: str, client_ip: str):
             except Exception:
                 logger.info(f"FortiGate REST API raw response: {res.text}")
 
+<<<<<<< HEAD
             if res.status_code in [200, 201]:
                 logger.info(f"Successfully authenticated session on FortiGate via REST API for user '{username}'")
                 return True
             else:
                 logger.error(f"FortiGate REST API Authentication Failed: {res.text}")
                 return False
+=======
+                    try:
+                        logger.info(f"Attempting FortiGate REST API Auth for '{fw_username}' (IP: {client_ip}) on {url} (server: {s_name or 'None'})")
+                        res = await client.post(url, json=payload, headers=headers, params={"access_token": FORTIGATE_API_TOKEN}, timeout=4)
+                        logger.info(f"FortiGate API response ({res.status_code}): {res.text}")
+                        if res.status_code in [200, 201]:
+                            logger.info(f"Successfully authenticated on FortiGate via REST API on {host}!")
+                            return True
+                    except Exception as req_err:
+                        logger.warning(f"Error trying FortiGate API on {host}: {str(req_err)}")
+                        continue
+>>>>>>> parent of 1e4fd18 (Update auth.py)
     except Exception as e:
         logger.error(f"Error calling FortiGate REST API: {str(e)}")
         return False
@@ -246,7 +274,12 @@ async def deauthenticate_fortigate_api(client_ip: str):
         logger.warning("Client IP is missing. Cannot de-authenticate session via REST API.")
         return False
 
+<<<<<<< HEAD
     url = f"https://{FORTIGATE_IP}/api/v2/monitor/user/firewall/deauth"
+=======
+    api_host = os.getenv("FORTIGATE_API_HOST", "10.1.2.254")
+    url = f"https://{api_host}/api/v2/monitor/user/firewall/deauth"
+>>>>>>> parent of 1e4fd18 (Update auth.py)
     headers = {
         "Authorization": f"Bearer {FORTIGATE_API_TOKEN}",
         "Content-Type": "application/json"
@@ -686,11 +719,22 @@ async def auth_callback(request: Request, response: Response):
         "auth_url": sess.get("auth_url") or request.session.get("auth_url", ""),
     }
 
+<<<<<<< HEAD
     # ยิง FortiGate REST API ในเบื้องหลังคู่ขนานเพื่อการันตีการเปิดสิทธิ์ 100%
     client_ip = captive_data.get("ip")
     if client_ip and FORTIGATE_API_TOKEN:
         logger.info(f"Triggering background FortiGate REST API Auth for username '{username}' and IP '{client_ip}'")
         asyncio.create_task(authenticate_fortigate_api(username, client_ip))
+=======
+    # ปลดล็อกสิทธิ์บน FortiGate REST API ทันที (Synchronous) เพื่อการันตีว่า Firewall เปิดเน็ตให้ทันทีก่อนส่งหน้าเว็บกลับไป
+    client_ip = captive_data.get("ip")
+    if client_ip and FORTIGATE_API_TOKEN:
+        logger.info(f"Authenticating session on FortiGate REST API for username '{username}' and IP '{client_ip}'")
+        try:
+            await authenticate_fortigate_api(username, client_ip)
+        except Exception as api_err:
+            logger.error(f"FortiGate API Auth error: {str(api_err)}")
+>>>>>>> parent of 1e4fd18 (Update auth.py)
 
     # ============================================================
     # QR Flow vs Direct Flow Branching
